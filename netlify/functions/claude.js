@@ -16,10 +16,20 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { prompt, max_tokens } = JSON.parse(event.body);
+    const body = JSON.parse(event.body);
+    const prompt = body.prompt;
+    const max_tokens = body.max_tokens || 4000;
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = 'gemini-1.5-pro';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    if (!apiKey) {
+      return {
+        statusCode: 500,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ error: 'GEMINI_API_KEY 환경변수가 설정되지 않았습니다.', text: '' })
+      };
+    }
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -27,9 +37,8 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          maxOutputTokens: max_tokens || 4000,
-          temperature: 0.3,
-          responseMimeType: 'application/json'
+          maxOutputTokens: max_tokens,
+          temperature: 0.2
         }
       })
     });
@@ -40,7 +49,7 @@ exports.handler = async (event) => {
       return {
         statusCode: 500,
         headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ error: data.error.message })
+        body: JSON.stringify({ error: `Gemini API 오류: ${data.error.message}`, text: '' })
       };
     }
 
@@ -54,11 +63,12 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({ text })
     };
+
   } catch (err) {
     return {
       statusCode: 500,
       headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ error: err.message })
+      body: JSON.stringify({ error: err.message, text: '' })
     };
   }
 };
