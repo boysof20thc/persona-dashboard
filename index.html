@@ -940,72 +940,144 @@ async function runReviewAnalysis() {
   if (currentPersonas.length === 0) { showToast('페르소나 데이터가 없습니다.', 'error'); return; }
 
   btn.disabled = true;
-  btn.textContent = '🔄 분석 중... (30~60초 소요)';
+  btn.textContent = '🔄 분석 중...';
 
   const addLog = (msg) => {
     log.innerHTML += `<div style="font-size:.78rem;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border)">${msg}</div>`;
+    log.scrollTop = log.scrollHeight;
   };
 
-  addLog(`📌 제품명 키워드: <strong style="color:var(--accent)">"${prodName}"</strong> 로 필터링`);
+  // 1) API 연결 테스트
+  addLog('🔌 Gemini API 연결 테스트 중...');
+  try {
+    const testData = await callAI('안녕. 한 단어로만 답해.', 10);
+    if (testData.error) {
+      addLog(`❌ API 연결 실패: ${testData.error}`);
+      addLog('→ Netlify 환경변수 GEMINI_API_KEY를 다시 확인해주세요.');
+      btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
+      return;
+    }
+    addLog(`✅ API 연결 성공`);
+  } catch(e) {
+    addLog(`❌ 네트워크 오류: ${e.message}`);
+    btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
+    return;
+  }
 
-  // 제품명에서 핵심 키워드 추출 (예: "LG 워시콤보 3in1" → ["워시콤보", "LG", "FH25VA"])
+  // 2) 키워드 필터링 — 전체 페르소나 전수 검토
+  addLog(`📌 제품명 키워드: <strong style="color:var(--accent)">"${prodName}"</strong> 로 전체 ${currentPersonas.length}명 전수 검토`);
   const keywords = prodName.split(/\s+/).filter(k => k.length > 1);
 
-  // 각 페르소나의 리뷰에서 제품 관련 내용만 추출
   const relevantReviews = [];
-  let matchCount = 0;
-
   currentPersonas.forEach(p => {
     const reviewText = p.review_text || '';
-    const purchaseText = (p.purchase_reasons || '') + ' ' + (p.install_locations || '');
-
-    // 제품명 키워드 중 하나라도 포함된 문장만 추출
-    const sentences = reviewText.split(/[.!?\/\[\]]+/).filter(s => s.trim().length > 10);
-    const relevant = sentences.filter(s =>
-      keywords.some(kw => s.includes(kw))
-    );
-
+    // 슬래시/대괄호 기준으로 문장 분리
+    const sentences = reviewText.split(/[/[\]]+/).filter(s => s.trim().length > 15);
+    const relevant = sentences.filter(s => keywords.some(kw => s.includes(kw)));
     if (relevant.length > 0) {
-      matchCount++;
       relevantReviews.push({
         name: p.profile_name || '?',
-        text: relevant.slice(0, 3).join('. ').substring(0, 500)
+        // 제품 관련 문장 전체 포함 (최대 600자)
+        text: relevant.join(' ').substring(0, 600)
       });
     }
   });
 
-  addLog(`✅ ${currentPersonas.length}명 중 <strong style="color:var(--accent)">${matchCount}명</strong>의 리뷰에서 제품 관련 내용 발견`);
+  const matchCount = relevantReviews.length;
+  const total = currentPersonas.length;
+  addLog(`✅ ${total}명 중 <strong style="color:var(--accent)">${matchCount}명</strong>의 리뷰에서 제품 관련 내용 발견`);
 
   if (matchCount === 0) {
-    addLog(`⚠️ 제품명 "${prodName}" 관련 리뷰가 없습니다. 제품명이 리뷰 텍스트와 일치하는지 확인해주세요.`);
-    btn.disabled = false;
-    btn.textContent = '🔍 AI 분석 시작하기';
+    addLog(`⚠️ "${prodName}" 관련 리뷰가 없습니다. 제품명이 전체_리뷰_통합 컬럼과 일치하는지 확인해주세요.`);
+    btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
     return;
   }
 
-  addLog(`🤖 Claude AI가 ${matchCount}개 리뷰를 분석 중...`);
+  // 3) 배치 처리 (30명 단위)
+  const BATCH_SIZE = 30;
+  const batches = [];
+  for (let i = 0; i < relevantReviews.length; i += BATCH_SIZE) {
+    batches.push(relevantReviews.slice(i, i + BATCH_SIZE));
+  }
+  addLog(`🤖 Gemini AI가 ${matchCount}명 리뷰를 ${batches.length}개 배치로 분석 중...`);
 
-  // 리뷰 샘플 (토큰 절약을 위해 최대 30개)
-  const sample = relevantReviews.slice(0, 15).map(r => `[${r.name}] ${r.text.substring(0,300)}`).join('\n---\n');
-  const total = currentPersonas.length;
+  let allPurchase = [], allLocations = [], allPositive = [], allNegative = [], allSummaries = [];
 
-  const prompt = `소비자 리뷰 분석 전문가로서 "${prodName}" 제품 리뷰 ${matchCount}건을 분석하세요.
+  for (let bi = 0; bi < batches.length; bi++) {
+    const batchSample = batches[bi].map(r => `[${r.name}] ${r.text}`).join('\n---\n');
+    addLog(`  📦 배치 ${bi+1}/${batches.length} (${batches[bi].length}명) 분석 중...`);
+
+    const batchPrompt = `"${prodName}" 제품 구매자 리뷰 ${batches[bi].length}건 분석. 아래 JSON만 출력하고 다른 텍스트 없이:
 
 리뷰:
-${sample}
+${batchSample}
 
-반드시 아래 JSON만 출력하세요. 설명 없이 JSON만:
-{"purchase_reasons":[{"rank":1,"reason":"키워드","detail":"설명","quote":"인용","mention_count":1},{"rank":2,"reason":"키워드","detail":"설명","quote":"인용","mention_count":1},{"rank":3,"reason":"키워드","detail":"설명","quote":"인용","mention_count":1}],"install_locations":[{"location":"장소","icon":"📍","detail":"설명","pct":50},{"location":"장소","icon":"📍","detail":"설명","pct":30}],"positive_top5":[{"rank":1,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":1}],"negative_top5":[{"rank":1,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":1}],"summary":"2~3문장 종합 인사이트"}`;
+{"purchase_reasons":[{"rank":1,"reason":"구매이유키워드","detail":"30자이내설명","quote":"실제인용구","mention_count":0},{"rank":2,"reason":"키워드","detail":"설명","quote":"인용","mention_count":0},{"rank":3,"reason":"키워드","detail":"설명","quote":"인용","mention_count":0}],"install_locations":[{"location":"설치장소","icon":"🏠","detail":"설명","pct":0},{"location":"설치장소","icon":"📍","detail":"설명","pct":0}],"positive_top5":[{"rank":1,"keyword":"긍정키워드","desc":"설명","mention_count":0},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":0}],"negative_top5":[{"rank":1,"keyword":"부정키워드","desc":"설명","mention_count":0},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":0}],"summary":"핵심인사이트2문장"}`;
 
+    try {
+      const bData = await callAI(batchPrompt, 3000);
+      if (bData.error) { addLog(`  ⚠️ 배치 ${bi+1} API 오류: ${bData.error}`); continue; }
+      const bRaw = (bData.text || '').replace(/\`\`\`json|\`\`\`/g, '').trim();
+      const bMatch = bRaw.match(/\{[\s\S]*\}/);
+      if (!bMatch) { addLog(`  ⚠️ 배치 ${bi+1} JSON 파싱 실패 (응답 길이: ${bRaw.length}자)`); continue; }
+      const bResult = JSON.parse(bMatch[0]);
+      if (bResult.purchase_reasons) allPurchase.push(...bResult.purchase_reasons);
+      if (bResult.install_locations) allLocations.push(...bResult.install_locations);
+      if (bResult.positive_top5) allPositive.push(...bResult.positive_top5);
+      if (bResult.negative_top5) allNegative.push(...bResult.negative_top5);
+      if (bResult.summary) allSummaries.push(bResult.summary);
+      addLog(`  ✅ 배치 ${bi+1} 완료`);
+    } catch(e) {
+      addLog(`  ⚠️ 배치 ${bi+1} 오류: ${e.message}`);
+    }
+  }
+
+  // 4) 배치 결과 통합
+  addLog('🔗 배치 결과 통합 중...');
+
+  function mergeByKey(arr, keyField) {
+    const map = {};
+    arr.forEach(item => {
+      const k = (item[keyField] || '').substring(0, 12);
+      if (!k) return;
+      if (!map[k]) map[k] = { ...item, mention_count: 0 };
+      map[k].mention_count += (item.mention_count || 1);
+    });
+    return Object.values(map).sort((a, b) => b.mention_count - a.mention_count);
+  }
+
+  function mergeLocations(arr) {
+    const map = {};
+    arr.forEach(item => {
+      const k = (item.location || '').substring(0, 10);
+      if (!k) return;
+      if (!map[k]) map[k] = { ...item, _cnt: 0 };
+      map[k]._cnt++;
+    });
+    const t = Object.values(map).reduce((s, v) => s + v._cnt, 0) || 1;
+    return Object.values(map)
+      .map(v => ({ ...v, pct: Math.round(v._cnt / t * 100) }))
+      .sort((a, b) => b.pct - a.pct).slice(0, 4);
+  }
+
+  const result = {
+    purchase_reasons: mergeByKey(allPurchase, 'reason').slice(0, 3).map((r, i) => ({ ...r, rank: i + 1 })),
+    install_locations: mergeLocations(allLocations),
+    positive_top5: mergeByKey(allPositive, 'keyword').slice(0, 5).map((r, i) => ({ ...r, rank: i + 1 })),
+    negative_top5: mergeByKey(allNegative, 'keyword').slice(0, 5).map((r, i) => ({ ...r, rank: i + 1 })),
+    summary: allSummaries.join(' ')
+  };
+
+  if (!result.purchase_reasons.length) {
+    addLog('❌ 분석 결과가 비어있습니다. 다시 시도해주세요.');
+    btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
+    return;
+  }
+
+  // 5) DB 저장
   try {
-    const data = await callAI(prompt, 4000);
-    const raw = (data.text || '').replace(/```json|```/g, '').trim();
-    const result = JSON.parse(raw);
-
     addLog('💾 분석 결과를 DB에 저장 중...');
-
-    // Supabase에 저장
-    const { error } = await sb.from('review_insights').upsert({
+    const saveData = {
       product_id: currentProductId,
       product_name: prodName,
       purchase_reasons: JSON.stringify(result.purchase_reasons),
@@ -1013,40 +1085,21 @@ ${sample}
       positive_top5: JSON.stringify(result.positive_top5),
       negative_top5: JSON.stringify(result.negative_top5),
       summary: result.summary
-    }, { onConflict: 'product_id' });
-
-    if (error) {
-      // onConflict 실패시 insert로 재시도
-      await sb.from('review_insights').insert({
-        product_id: currentProductId,
-        product_name: prodName,
-        purchase_reasons: JSON.stringify(result.purchase_reasons),
-        install_locations: JSON.stringify(result.install_locations),
-        positive_top5: JSON.stringify(result.positive_top5),
-        negative_top5: JSON.stringify(result.negative_top5),
-        summary: result.summary
-      });
+    };
+    const { error: upsertErr } = await sb.from('review_insights').upsert(saveData, { onConflict: 'product_id' });
+    if (upsertErr) {
+      await sb.from('review_insights').insert(saveData);
     }
-
     addLog('✅ 저장 완료! 화면을 업데이트합니다.');
     showToast('✅ 리뷰 인사이트 분석 완료!', 'success');
-
-    currentInsight = result;
-    currentInsight.purchase_reasons = JSON.stringify(result.purchase_reasons);
-    currentInsight.install_locations = JSON.stringify(result.install_locations);
-    currentInsight.positive_top5 = JSON.stringify(result.positive_top5);
-    currentInsight.negative_top5 = JSON.stringify(result.negative_top5);
-
+    currentInsight = saveData;
+    currentInsight.purchase_reasons = saveData.purchase_reasons;
     setTimeout(() => renderReviewData(currentInsight, prod), 500);
-
   } catch(e) {
-    addLog(`❌ 오류 발생: ${e.message}`);
-    showToast('분석 중 오류가 발생했습니다.', 'error');
-    btn.disabled = false;
-    btn.textContent = '🔍 AI 분석 시작하기';
+    addLog(`❌ DB 저장 오류: ${e.message}`);
+    btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
   }
 }
-
 async function reAnalyze() {
   // 기존 인사이트 삭제 후 재분석
   await sb.from('review_insights').delete().eq('product_id', currentProductId);
