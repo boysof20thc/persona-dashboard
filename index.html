@@ -986,46 +986,19 @@ async function runReviewAnalysis() {
   addLog(`🤖 Claude AI가 ${matchCount}개 리뷰를 분석 중...`);
 
   // 리뷰 샘플 (토큰 절약을 위해 최대 30개)
-  const sample = relevantReviews.slice(0, 30).map(r => `[${r.name}] ${r.text}`).join('\n\n');
+  const sample = relevantReviews.slice(0, 15).map(r => `[${r.name}] ${r.text.substring(0,300)}`).join('\n---\n');
   const total = currentPersonas.length;
 
-  const prompt = `당신은 소비자 리뷰 분석 전문가입니다.
-아래는 "${prodName}" 제품을 구매한 ${matchCount}명의 실제 리뷰 내용입니다. (전체 페르소나 ${total}명)
+  const prompt = `소비자 리뷰 분석 전문가로서 "${prodName}" 제품 리뷰 ${matchCount}건을 분석하세요.
 
-리뷰 내용:
+리뷰:
 ${sample}
 
-위 리뷰를 분석해서 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이 JSON만:
-
-{
-  "purchase_reasons": [
-    {"rank":1,"reason":"이유 키워드(10자 이내)","detail":"구체적 설명(30자 이내)","quote":"실제 리뷰 인용구(30자 이내)","mention_count":언급_페르소나_수},
-    {"rank":2,"reason":"...","detail":"...","quote":"...","mention_count":숫자},
-    {"rank":3,"reason":"...","detail":"...","quote":"...","mention_count":숫자}
-  ],
-  "install_locations": [
-    {"location":"설치장소명","icon":"이모지","detail":"상세설명","pct":비율숫자},
-    {"location":"...","icon":"...","detail":"...","pct":숫자}
-  ],
-  "positive_top5": [
-    {"rank":1,"keyword":"키워드(6자이내)","desc":"설명(30자이내)","mention_count":언급수},
-    {"rank":2,"keyword":"...","desc":"...","mention_count":숫자},
-    {"rank":3,"keyword":"...","desc":"...","mention_count":숫자},
-    {"rank":4,"keyword":"...","desc":"...","mention_count":숫자},
-    {"rank":5,"keyword":"...","desc":"...","mention_count":숫자}
-  ],
-  "negative_top5": [
-    {"rank":1,"keyword":"키워드(6자이내)","desc":"설명(30자이내)","mention_count":언급수},
-    {"rank":2,"keyword":"...","desc":"...","mention_count":숫자},
-    {"rank":3,"keyword":"...","desc":"...","mention_count":숫자},
-    {"rank":4,"keyword":"...","desc":"...","mention_count":숫자},
-    {"rank":5,"keyword":"...","desc":"...","mention_count":숫자}
-  ],
-  "summary": "종합 인사이트 3~4문장. 핵심 구매 동인, 주요 만족/불만 요소, 타겟 특성, 마케팅 시사점 포함."
-}`;
+반드시 아래 JSON만 출력하세요. 설명 없이 JSON만:
+{"purchase_reasons":[{"rank":1,"reason":"키워드","detail":"설명","quote":"인용","mention_count":1},{"rank":2,"reason":"키워드","detail":"설명","quote":"인용","mention_count":1},{"rank":3,"reason":"키워드","detail":"설명","quote":"인용","mention_count":1}],"install_locations":[{"location":"장소","icon":"📍","detail":"설명","pct":50},{"location":"장소","icon":"📍","detail":"설명","pct":30}],"positive_top5":[{"rank":1,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":1}],"negative_top5":[{"rank":1,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":1},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":1}],"summary":"2~3문장 종합 인사이트"}`;
 
   try {
-    const data = await callAI(prompt, 2000);
+    const data = await callAI(prompt, 4000);
     const raw = (data.text || '').replace(/```json|```/g, '').trim();
     const result = JSON.parse(raw);
 
