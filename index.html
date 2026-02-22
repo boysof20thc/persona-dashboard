@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Persona Intelligence Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#0a0a0f;--surface:#13131a;--surface2:#1c1c27;--border:#2a2a3a;--accent:#c8ff00;--accent2:#ff6b6b;--accent3:#6bc5ff;--purple:#b06bff;--orange:#ffb06b;--text:#e8e8f0;--muted:#7a7a9a;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans KR',sans-serif;min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(200,255,0,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(200,255,0,0.025) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
+.wrap{position:relative;z-index:1;}
+
+/* HEADER */
+header{padding:28px 48px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.h-title{font-family:'DM Serif Display',serif;font-size:2rem;color:#fff;}
+.h-title span{color:var(--accent);font-style:italic;}
+.h-sub{font-size:0.8rem;color:var(--muted);margin-top:4px;}
+.header-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.prod-select-wrap{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:8px 14px;}
+.prod-select-label{font-size:0.62rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
+.prod-select{background:none;border:none;color:var(--accent);font-family:'Noto Sans KR',sans-serif;font-size:0.9rem;font-weight:700;outline:none;cursor:pointer;width:220px;}
+.prod-select option{background:var(--surface2);color:var(--text);}
+.upload-btn{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 16px;color:var(--muted);font-family:'Noto Sans KR',sans-serif;font-size:0.8rem;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s;}
+.upload-btn:hover{border-color:var(--accent);color:var(--accent);}
+.upload-btn input{display:none;}
+
+/* NAV */
+nav{padding:0 48px;border-bottom:1px solid var(--border);display:flex;gap:2px;overflow-x:auto;}
+nav::-webkit-scrollbar{height:0;}
+.tab-btn{background:none;border:none;color:var(--muted);font-family:'Noto Sans KR',sans-serif;font-size:0.83rem;font-weight:500;padding:14px 16px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:color .2s;}
+.tab-btn:hover{color:var(--text);}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* CONTENT */
+.content{padding:32px 48px;}
+.tab-panel{display:none;} .tab-panel.active{display:block;}
+@media(max-width:900px){header,nav,.content{padding-left:20px;padding-right:20px;}}
+
+/* LOADING */
+.page-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;gap:16px;}
+.page-loading .dots{display:flex;gap:6px;}
+.page-loading .dots span{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:db 1.2s ease-in-out infinite;}
+.page-loading .dots span:nth-child(2){animation-delay:.2s;}.page-loading .dots span:nth-child(3){animation-delay:.4s;}
+.loading-text{font-size:.85rem;color:var(--muted);}
+.empty-state{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-state .e-icon{font-size:3rem;margin-bottom:16px;}
+.empty-state .e-title{font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px;}
+.empty-state .e-desc{font-size:0.84rem;line-height:1.6;}
+
+/* TOAST */
+.toast{position:fixed;bottom:28px;right:28px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 20px;font-size:0.85rem;z-index:999;opacity:0;transform:translateY(10px);transition:all .3s;max-width:320px;}
+.toast.show{opacity:1;transform:translateY(0);}
+.toast.success{border-left:3px solid var(--accent);}
+.toast.error{border-left:3px solid var(--accent2);}
+
+/* STAT CARDS */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:28px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;position:relative;overflow:hidden;}
+.stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.stat-card.c1::after{background:var(--accent);}.stat-card.c2::after{background:var(--accent2);}.stat-card.c3::after{background:var(--accent3);}.stat-card.c4::after{background:var(--purple);}.stat-card.c5::after{background:var(--orange);}
+.s-label{font-size:0.67rem;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px;}
+.s-val{font-size:1.7rem;font-weight:900;line-height:1;color:#fff;}
+.s-sub{font-size:0.72rem;color:var(--muted);margin-top:4px;}
+
+/* INSIGHT GRID */
+.insight-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;}
+@media(max-width:800px){.insight-grid{grid-template-columns:1fr;}}
+.insight-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+.insight-card h3{font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px;}
+.bar-item{display:flex;align-items:center;gap:9px;margin-bottom:9px;}
+.bar-label{font-size:0.8rem;width:110px;flex-shrink:0;}
+.bar-track{flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:3px;transition:width 1.2s ease;}
+.bf-g{background:var(--accent);}.bf-r{background:var(--accent2);}.bf-b{background:var(--accent3);}.bf-p{background:var(--purple);}.bf-o{background:var(--orange);}
+.bar-pct{font-size:0.72rem;color:var(--muted);width:30px;text-align:right;}
+
+/* PAIN */
+.sec-title{font-family:'DM Serif Display',serif;font-size:1.25rem;color:#fff;margin-bottom:14px;}
+.sec-title small{font-family:'Noto Sans KR',sans-serif;font-size:0.75rem;font-weight:400;color:var(--muted);margin-left:8px;}
+.pain-list{display:flex;flex-direction:column;gap:8px;}
+.pain-item{background:var(--surface2);border-left:3px solid var(--accent2);border-radius:7px;padding:10px 13px;font-size:0.83rem;line-height:1.5;}
+.pain-who{font-size:0.68rem;color:var(--muted);margin-top:2px;}
+
+/* REVIEW INSIGHTS */
+.ri-header{display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;}
+.ri-prod-badge{background:rgba(200,255,0,0.08);border:1px solid rgba(200,255,0,0.25);border-radius:7px;padding:7px 14px;font-size:0.82rem;color:var(--accent);font-weight:700;}
+.ri-meta{font-size:0.78rem;color:var(--muted);}
+.ri-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+@media(max-width:800px){.ri-grid{grid-template-columns:1fr;}}
+.ri-card{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:20px;}
+.ri-card.full{grid-column:1/-1;}
+.ri-card-hd{display:flex;align-items:center;gap:9px;margin-bottom:16px;padding-bottom:11px;border-bottom:1px solid var(--border);}
+.ri-icon{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;}
+.ri-card-title{font-size:0.88rem;font-weight:700;color:#fff;}
+.ri-card-sub{font-size:0.7rem;color:var(--muted);margin-top:1px;}
+.reason-list{display:flex;flex-direction:column;gap:9px;}
+.reason-item{display:flex;gap:9px;align-items:flex-start;}
+.reason-rank{width:20px;height:20px;border-radius:5px;background:rgba(200,255,0,0.1);border:1px solid rgba(200,255,0,0.25);color:var(--accent);font-size:0.65rem;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;}
+.reason-text{font-size:0.83rem;line-height:1.5;}
+.reason-text strong{color:#fff;}
+.reason-quote{font-size:0.73rem;color:var(--muted);font-style:italic;margin-top:2px;}
+.loc-list{display:flex;flex-direction:column;gap:11px;}
+.loc-item{display:flex;align-items:center;gap:11px;}
+.loc-icon{font-size:1.2rem;width:32px;text-align:center;flex-shrink:0;}
+.loc-body{flex:1;}
+.loc-name{font-size:0.86rem;font-weight:600;}
+.loc-detail{font-size:0.72rem;color:var(--muted);margin-top:1px;}
+.loc-bar-track{height:5px;background:var(--surface2);border-radius:3px;margin-top:5px;overflow:hidden;}
+.loc-bar-fill{height:100%;border-radius:3px;background:var(--accent3);transition:width 1.2s ease;}
+.loc-pct{font-size:0.72rem;color:var(--muted);width:28px;text-align:right;flex-shrink:0;}
+.top5-list{display:flex;flex-direction:column;gap:7px;}
+.top5-item{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:7px;background:var(--surface2);}
+.top5-item.pos{border-left:3px solid var(--accent);}.top5-item.neg{border-left:3px solid var(--accent2);}
+.t5-rank{font-size:0.65rem;font-weight:900;width:17px;flex-shrink:0;margin-top:2px;}
+.top5-item.pos .t5-rank{color:var(--accent);}.top5-item.neg .t5-rank{color:var(--accent2);}
+.t5-kw{font-size:0.83rem;font-weight:700;margin-bottom:2px;}
+.t5-desc{font-size:0.73rem;color:var(--muted);}
+.ri-summary{font-size:0.88rem;line-height:1.8;background:var(--surface2);border-radius:9px;padding:15px 17px;border-left:3px solid var(--accent);}
+
+/* PERSONA CARDS */
+.cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px;}
+.persona-card{background:var(--surface);border:1.5px solid var(--border);border-radius:13px;overflow:hidden;transition:transform .2s,border-color .2s;}
+.persona-card:hover{transform:translateY(-3px);border-color:rgba(200,255,0,0.3);}
+.pc-header{padding:16px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);}
+.pc-avatar{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;}
+.pc-name{font-size:0.97rem;font-weight:700;}
+.pc-meta{font-size:0.73rem;color:var(--muted);margin-top:2px;}
+.pc-body{padding:16px 18px;}
+.tag-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:13px;}
+.tag{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:3px 9px;font-size:0.72rem;color:var(--muted);}
+.tag.tg{border-color:rgba(200,255,0,0.3);color:var(--accent);background:rgba(200,255,0,0.05);}
+.tag.tr{border-color:rgba(255,107,107,0.3);color:var(--accent2);background:rgba(255,107,107,0.05);}
+.tag.tb{border-color:rgba(107,197,255,0.3);color:var(--accent3);background:rgba(107,197,255,0.05);}
+.tag.tp{border-color:rgba(176,107,255,0.3);color:var(--purple);background:rgba(176,107,255,0.05);}
+.info2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px;}
+.il{font-size:0.65rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:2px;}
+.iv{font-size:0.8rem;line-height:1.4;}
+.pp-box{background:rgba(255,107,107,0.06);border:1px solid rgba(255,107,107,0.14);border-radius:6px;padding:9px 12px;margin-bottom:7px;}
+.pp-label{font-size:0.64rem;color:var(--accent2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;}
+.pp-text{font-size:0.8rem;line-height:1.5;}
+.goal-box{background:rgba(200,255,0,0.04);border:1px solid rgba(200,255,0,0.13);border-radius:6px;padding:9px 12px;margin-bottom:7px;}
+.goal-label{font-size:0.64rem;color:var(--accent);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;}
+.goal-text{font-size:0.8rem;line-height:1.5;}
+.identity-box{background:rgba(176,107,255,0.05);border:1px solid rgba(176,107,255,0.15);border-radius:6px;padding:9px 12px;margin-bottom:7px;}
+.identity-label{font-size:0.64rem;color:var(--purple);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;}
+.identity-text{font-size:0.8rem;line-height:1.5;}
+.expand-btn{background:none;border:none;color:var(--muted);font-size:0.74rem;cursor:pointer;margin-top:10px;font-family:'Noto Sans KR',sans-serif;transition:color .2s;display:flex;align-items:center;gap:4px;}
+.expand-btn:hover{color:var(--accent);}
+.extra{display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px;}
+.extra.open{display:block;}
+.extra-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+
+/* FOCUS GROUP */
+.step-label{font-size:0.7rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:9px;}
+.step-label span{background:var(--accent);color:#000;font-size:0.62rem;font-weight:900;padding:2px 6px;border-radius:3px;}
+.part-area{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:20px;margin-bottom:24px;}
+.part-hint{font-size:0.78rem;color:var(--muted);margin-bottom:12px;}
+.filter-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;}
+.fchip{background:var(--surface2);border:1px solid var(--border);border-radius:16px;padding:5px 12px;font-size:0.75rem;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .2s;}
+.fchip:hover{border-color:var(--accent);color:var(--accent);}
+.fchip.active{background:rgba(200,255,0,0.08);border-color:var(--accent);color:var(--accent);}
+.part-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:9px;}
+.pcard{background:var(--surface2);border:2px solid var(--border);border-radius:9px;padding:11px 13px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:9px;position:relative;user-select:none;}
+.pcard:hover{border-color:rgba(200,255,0,0.35);transform:translateY(-2px);}
+.pcard.selected{border-color:var(--accent);background:rgba(200,255,0,0.06);}
+.pcard.hidden{display:none;}
+.p-av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.05rem;flex-shrink:0;}
+.p-nm{font-size:0.83rem;font-weight:700;}
+.p-mt{font-size:0.7rem;color:var(--muted);margin-top:2px;line-height:1.3;}
+.chk{position:absolute;top:6px;right:7px;width:15px;height:15px;border-radius:50%;background:var(--accent);color:#000;font-size:0.58rem;font-weight:900;display:none;align-items:center;justify-content:center;}
+.pcard.selected .chk{display:flex;}
+.sel-summary{display:flex;align-items:center;gap:9px;margin-top:13px;padding-top:13px;border-top:1px solid var(--border);}
+.sel-count{font-size:0.83rem;font-weight:700;color:var(--accent);flex:1;}
+.mini-btn{background:none;border:1px solid var(--border);border-radius:5px;padding:4px 9px;font-size:0.72rem;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .2s;}
+.mini-btn:hover{border-color:var(--accent);color:var(--accent);}
+.survey-box{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:24px;margin-bottom:20px;}
+.survey-box .desc{color:var(--muted);font-size:0.83rem;line-height:1.6;margin-bottom:16px;}
+.preset-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:7px;}
+.preset-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+.preset-btn{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 11px;font-size:0.75rem;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .2s;}
+.preset-btn:hover{border-color:var(--accent3);color:var(--accent3);}
+.q-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:0.9rem;resize:vertical;min-height:72px;outline:none;transition:border-color .2s;}
+.q-input:focus{border-color:var(--accent);}
+.run-btn{margin-top:10px;background:var(--accent);color:#000;border:none;border-radius:7px;padding:10px 24px;font-family:'Noto Sans KR',sans-serif;font-size:0.86rem;font-weight:700;cursor:pointer;transition:opacity .2s;}
+.run-btn:hover{opacity:.85;}.run-btn:disabled{opacity:.4;cursor:not-allowed;}
+.survey-results{display:flex;flex-direction:column;gap:12px;}
+.resp-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;opacity:0;transform:translateY(8px);transition:opacity .5s,transform .5s;}
+.resp-card.vis{opacity:1;transform:translateY(0);}
+.resp-head{display:flex;align-items:center;gap:9px;margin-bottom:9px;}
+.resp-name{font-weight:700;font-size:0.9rem;}
+.resp-role{font-size:0.72rem;color:var(--muted);}
+.resp-text{font-size:0.85rem;line-height:1.7;}
+.focus-bar{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:11px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.fb-label{font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
+.fb-chips{display:flex;gap:6px;flex-wrap:wrap;flex:1;}
+.fb-chip{display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:3px 8px;font-size:0.73rem;}
+.dots{display:flex;gap:5px;padding:4px 0;}
+.dots span{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:db 1.2s ease-in-out infinite;}
+.dots span:nth-child(2){animation-delay:.2s;}.dots span:nth-child(3){animation-delay:.4s;}
+@keyframes db{0%,80%,100%{transform:scale(.6);opacity:.4;}40%{transform:scale(1);opacity:1;}}
+
+/* COMPARE */
+.cmp-selector{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:22px;margin-bottom:24px;}
+.cmp-sel-title{font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:14px;}
+.cmp-prod-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:600px){.cmp-prod-grid{grid-template-columns:1fr;}}
+.cmp-prod-slot{border:2px dashed var(--border);border-radius:9px;padding:14px;transition:border-color .2s;}
+.cmp-prod-slot.filled{border-style:solid;border-color:rgba(200,255,0,0.4);background:rgba(200,255,0,0.03);}
+.cmp-slot-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;}
+.cmp-slot-a .cmp-slot-label{color:var(--accent);}
+.cmp-slot-b .cmp-slot-label{color:var(--accent3);}
+.cmp-select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:0.86rem;outline:none;cursor:pointer;}
+.cmp-run-row{display:flex;justify-content:center;margin-top:16px;}
+.cmp-run-btn{background:var(--accent);color:#000;border:none;border-radius:8px;padding:11px 32px;font-family:'Noto Sans KR',sans-serif;font-size:0.9rem;font-weight:700;cursor:pointer;transition:opacity .2s;}
+.cmp-run-btn:hover{opacity:.85;}.cmp-run-btn:disabled{opacity:.4;cursor:not-allowed;}
+.cmp-section{margin-bottom:32px;}
+.cmp-sec-hd{display:flex;align-items:center;gap:11px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border);}
+.cmp-sec-icon{font-size:1.2rem;}
+.cmp-sec-title{font-family:'DM Serif Display',serif;font-size:1.15rem;color:#fff;}
+.cmp-sec-sub{font-size:0.75rem;color:var(--muted);margin-top:2px;}
+.cmp-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:700px){.cmp-2col{grid-template-columns:1fr;}}
+.cmp-col{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:18px;}
+.cmp-col-a{border-top:3px solid var(--accent);}
+.cmp-col-b{border-top:3px solid var(--accent3);}
+.cmp-col-hd{display:flex;align-items:center;gap:9px;margin-bottom:14px;padding-bottom:11px;border-bottom:1px solid var(--border);}
+.cmp-col-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.cmp-col-name{font-size:0.88rem;font-weight:700;}
+.cmp-col-cnt{font-size:0.72rem;color:var(--muted);margin-top:1px;}
+.diff-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+@media(max-width:800px){.diff-grid{grid-template-columns:1fr;}}
+.diff-card{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:18px;}
+.diff-card.common{border-top:2px solid var(--purple);}
+.diff-card.only-a{border-top:2px solid var(--accent);}
+.diff-card.only-b{border-top:2px solid var(--accent3);}
+.diff-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:11px;font-weight:700;}
+.diff-card.common .diff-label{color:var(--purple);}
+.diff-card.only-a .diff-label{color:var(--accent);}
+.diff-card.only-b .diff-label{color:var(--accent3);}
+.diff-item{font-size:0.81rem;line-height:1.55;padding:6px 0;border-bottom:1px solid var(--border);}
+.diff-item:last-child{border-bottom:none;}
+.cmp-focus-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:700px){.cmp-focus-grid{grid-template-columns:1fr;}}
+.cmp-focus-col{display:flex;flex-direction:column;gap:10px;}
+.cmp-focus-hd{font-size:0.78rem;font-weight:700;padding:7px 11px;border-radius:6px;margin-bottom:4px;}
+.cmp-fa-hd{background:rgba(200,255,0,0.08);color:var(--accent);}
+.cmp-fb-hd{background:rgba(107,197,255,0.08);color:var(--accent3);}
+
+/* MARKETING */
+.idea-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;}
+.idea-card{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:20px;position:relative;overflow:hidden;}
+.idea-num{font-family:'DM Serif Display',serif;font-size:2.6rem;color:var(--surface2);position:absolute;top:5px;right:12px;line-height:1;}
+.idea-cat{font-size:0.65rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:700;}
+.idea-ttl{font-size:0.92rem;font-weight:700;color:#fff;margin-bottom:7px;line-height:1.4;}
+.idea-desc{font-size:0.8rem;color:var(--muted);line-height:1.6;}
+
+::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:var(--bg);}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HEADER -->
+<header>
+  <div>
+    <div class="h-title">Persona <span>Intelligence</span></div>
+    <div class="h-sub">고객 페르소나 분석 대시보드</div>
+  </div>
+  <div class="header-right">
+    <div class="prod-select-wrap">
+      <div class="prod-select-label">현재 제품</div>
+      <select class="prod-select" id="product-select" onchange="onProductChange()">
+        <option value="">— 제품 로딩 중 —</option>
+      </select>
+    </div>
+    <label class="upload-btn">
+      📂 CSV 업로드
+      <input type="file" accept=".csv" id="csv-file-input" onchange="handleCSVUpload(event)">
+    </label>
+  </div>
+</header>
+
+<!-- NAV -->
+<nav>
+  <button class="tab-btn active" onclick="switchTab('overview',this)">📊 개요 분석</button>
+  <button class="tab-btn" onclick="switchTab('review',this)">🔍 리뷰 인사이트</button>
+  <button class="tab-btn" onclick="switchTab('personas',this)">👤 페르소나 카드</button>
+  <button class="tab-btn" onclick="switchTab('focus',this)">🎤 가상 좌담회</button>
+  <button class="tab-btn" onclick="switchTab('compare',this)">⚖️ 제품 비교</button>
+  <button class="tab-btn" onclick="switchTab('marketing',this)">💡 마케팅 인사이트</button>
+  <button class="tab-btn" onclick="switchTab('product',this)">📦 상품기획 인사이트</button>
+</nav>
+
+<div class="content">
+  <div class="tab-panel active" id="tab-overview"><div class="page-loading"><div class="dots"><span></span><span></span><span></span></div><div class="loading-text">데이터 로딩 중...</div></div></div>
+  <div class="tab-panel" id="tab-review"></div>
+  <div class="tab-panel" id="tab-personas"><div class="cards-grid" id="cards-grid"></div></div>
+  <div class="tab-panel" id="tab-focus">
+    <div class="step-label"><span>STEP 1</span> 좌담회 참여자 선택</div>
+    <div class="part-area">
+      <div class="part-hint">카드를 클릭해서 참여자를 선택하세요.</div>
+      <div class="filter-row">
+        <button class="fchip active" onclick="filterPart('all',this)">전체</button>
+        <button class="fchip" onclick="filterPart('기혼',this)">기혼</button>
+        <button class="fchip" onclick="filterPart('자녀',this)">자녀 있음</button>
+        <button class="fchip" onclick="filterPart('반려동물',this)">반려동물 있음</button>
+        <button class="fchip" onclick="filterPart('미혼',this)">미혼</button>
+      </div>
+      <div class="part-grid" id="part-grid"></div>
+      <div class="sel-summary">
+        <span class="sel-count" id="sel-count">0명 선택됨</span>
+        <button class="mini-btn" onclick="selAll()">전체 선택</button>
+        <button class="mini-btn" onclick="deselAll()">전체 해제</button>
+      </div>
+    </div>
+    <div class="step-label"><span>STEP 2</span> 질문 입력</div>
+    <div class="survey-box">
+      <p class="desc">선택된 페르소나들이 각자의 특성을 반영해 응답합니다.</p>
+      <div class="preset-label">빠른 질문 예시</div>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="setQ(this)">세탁기 구매 시 가장 중요하게 보는 기준은?</button>
+        <button class="preset-btn" onclick="setQ(this)">현재 세탁기에서 가장 불편한 점은?</button>
+        <button class="preset-btn" onclick="setQ(this)">워시콤보 제품에 관심이 있나요?</button>
+        <button class="preset-btn" onclick="setQ(this)">AI 세탁 기능이 생긴다면 어떤 기능을 원하나요?</button>
+      </div>
+      <textarea class="q-input" id="focus-q" placeholder="질문을 입력하세요..."></textarea>
+      <button class="run-btn" id="focus-run" onclick="runFocus()">💬 좌담회 시작하기</button>
+    </div>
+    <div class="survey-results" id="focus-results"></div>
+  </div>
+  <div class="tab-panel" id="tab-compare">
+    <div class="cmp-selector">
+      <div class="cmp-sel-title">비교할 제품 2개를 선택하세요</div>
+      <div class="cmp-prod-grid">
+        <div class="cmp-prod-slot cmp-slot-a" id="slot-a">
+          <div class="cmp-slot-label">제품 A</div>
+          <select class="cmp-select" id="cmp-sel-a" onchange="updateSlot('a')"><option value="">— 제품 선택 —</option></select>
+        </div>
+        <div class="cmp-prod-slot cmp-slot-b" id="slot-b">
+          <div class="cmp-slot-label">제품 B</div>
+          <select class="cmp-select" id="cmp-sel-b" onchange="updateSlot('b')"><option value="">— 제품 선택 —</option></select>
+        </div>
+      </div>
+      <div class="cmp-run-row"><button class="cmp-run-btn" id="cmp-run" onclick="runCompare()">⚖️ 비교 분석 시작</button></div>
+    </div>
+    <div id="cmp-results"></div>
+  </div>
+  <div class="tab-panel" id="tab-marketing"><div class="idea-grid" id="idea-grid"></div></div>
+  <div class="tab-panel" id="tab-product"><div class="idea-grid" id="product-grid"></div></div>
+</div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════ SUPABASE ═══════════════════════
+const SUPABASE_URL = 'https://zaczlobfbshsvmahfzjv.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphY3psb2JmYnNoc3ZtYWhmemp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2NDY5MDgsImV4cCI6MjA4NzIyMjkwOH0.4UoDAy4vPw2FPI9UV5uztSlya060HJw57By53SBA-sM';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ═══════════════════════ STATE ═══════════════════════
+let allProducts = [];      // [{id, name, category}]
+let currentProductId = null;
+let currentPersonas = [];  // 현재 제품 페르소나
+let currentInsight = null; // 현재 제품 리뷰 인사이트
+let selectedParts = new Set();
+let partsRendered = false;
+const PERSONA_COLORS = ['#c8ff00','#ffb06b','#6bc5ff','#b06bff','#ff6b6b','#ff9f43','#54a0ff','#5f27cd'];
+const PERSONA_EMOJIS = ['🌿','🐾','🏡','👨‍👩‍👧','🐱','💼','👶','👔','🎨','🌸'];
+
+// ═══════════════════════ INIT ═══════════════════════
+window.addEventListener('load', async () => {
+  await loadProducts();
+});
+
+async function loadProducts() {
+  const { data, error } = await sb.from('products').select('*').order('created_at', { ascending: false });
+  if (error) { showToast('제품 목록 로딩 실패: ' + error.message, 'error'); return; }
+
+  allProducts = data || [];
+  const sel = document.getElementById('product-select');
+  sel.innerHTML = allProducts.length === 0
+    ? '<option value="">— 등록된 제품 없음 —</option>'
+    : allProducts.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+
+  // 비교 탭 드롭다운도 채우기
+  ['cmp-sel-a','cmp-sel-b'].forEach(id => {
+    const s = document.getElementById(id);
+    s.innerHTML = '<option value="">— 제품 선택 —</option>' +
+      allProducts.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  });
+
+  if (allProducts.length > 0) {
+    currentProductId = allProducts[0].id;
+    await loadProductData(currentProductId);
+  } else {
+    showEmptyState();
+  }
+}
+
+async function loadProductData(productId) {
+  // 개요 탭 로딩 표시
+  document.getElementById('tab-overview').innerHTML = `<div class="page-loading"><div class="dots"><span></span><span></span><span></span></div><div class="loading-text">데이터 로딩 중...</div></div>`;
+
+  const [{ data: personas }, { data: insights }] = await Promise.all([
+    sb.from('personas').select('*').eq('product_id', productId).order('id'),
+    sb.from('review_insights').select('*').eq('product_id', productId).limit(1)
+  ]);
+
+  currentPersonas = (personas || []).map((p, i) => ({
+    ...p,
+    color: PERSONA_COLORS[i % PERSONA_COLORS.length],
+    emoji: PERSONA_EMOJIS[i % PERSONA_EMOJIS.length]
+  }));
+  currentInsight = insights?.[0] || null;
+
+  // 탭 리셋
+  document.getElementById('cards-grid').innerHTML = '';
+  document.getElementById('part-grid').innerHTML = '';
+  document.getElementById('focus-results').innerHTML = '';
+  document.getElementById('idea-grid').innerHTML = '';
+  document.getElementById('product-grid').innerHTML = '';
+  partsRendered = false;
+  selectedParts.clear();
+
+  renderOverview();
+  renderReview();
+
+  // 현재 활성 탭이 다른 곳이면 그것도 렌더
+  const activeTab = document.querySelector('.tab-panel.active')?.id;
+  if (activeTab === 'tab-personas') renderPersonas();
+  if (activeTab === 'tab-focus') renderParts();
+  if (activeTab === 'tab-marketing') renderMarketing();
+}
+
+function onProductChange() {
+  const sel = document.getElementById('product-select');
+  currentProductId = parseInt(sel.value);
+  loadProductData(currentProductId);
+}
+
+function showEmptyState() {
+  document.getElementById('tab-overview').innerHTML = `
+    <div class="empty-state">
+      <div class="e-icon">📂</div>
+      <div class="e-title">아직 등록된 제품이 없어요</div>
+      <div class="e-desc">우측 상단 "CSV 업로드" 버튼으로<br>첫 번째 제품 페르소나를 업로드해주세요.</div>
+    </div>`;
+}
+
+// ═══════════════════════ CSV 업로드 ═══════════════════════
+async function handleCSVUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  showToast('CSV 파일 읽는 중...', 'success');
+
+  const text = await file.text();
+  const bom = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+  const lines = bom.split('\n').filter(l => l.trim());
+  if (lines.length < 2) { showToast('CSV 데이터가 없습니다.', 'error'); return; }
+
+  const headers = parseCSVLine(lines[0]);
+  const rows = lines.slice(1).map(l => {
+    const vals = parseCSVLine(l);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+
+  if (rows.length === 0) { showToast('유효한 데이터가 없습니다.', 'error'); return; }
+
+  // 제품명 추출 (첫 번째 행의 제품명 컬럼 또는 파일명)
+  const productName = rows[0]['제품명'] || rows[0]['product_name'] || file.name.replace('.csv','');
+  const productCategory = rows[0]['카테고리'] || rows[0]['category'] || '기타';
+
+  showToast(`"${productName}" 저장 중...`, 'success');
+
+  // 1. products 테이블에 제품 upsert
+  const { data: prodData, error: prodErr } = await sb
+    .from('products')
+    .upsert({ name: productName, category: productCategory }, { onConflict: 'name' })
+    .select().single();
+
+  if (prodErr) { showToast('제품 저장 실패: ' + prodErr.message, 'error'); return; }
+  const productId = prodData.id;
+
+  // 2. 기존 페르소나 삭제 후 재삽입
+  await sb.from('personas').delete().eq('product_id', productId);
+
+  const personaRows = rows.map(r => ({
+    product_id: productId,
+    product_name: productName,
+    profile_name:   r['프로필_이름'] || r['profile_name'] || '',
+    total_reviews:  parseInt(r['총_리뷰수'] || r['total_reviews'] || 0) || 0,
+    gender:         r['성별'] || '',
+    age:            r['추정_연령대'] || r['age'] || '',
+    region_style:   r['거주_지역_스타일'] || r['region_style'] || '',
+    job:            r['추정_직업군'] || r['job'] || '',
+    income:         r['소득_수준'] || r['income'] || '',
+    married:        r['결혼_여부'] || r['married'] || '',
+    children:       r['자녀_유무'] || r['children'] || '',
+    pet:            r['반려동물_유무'] || r['pet'] || '',
+    core_values:    r['핵심_가치관'] || r['core_values'] || '',
+    lifestyle:      r['라이프스타일'] || r['lifestyle'] || '',
+    living_room:    r['거실_풍경'] || r['living_room'] || '',
+    top_apps:       r['홈화면_앱_TOP3'] || r['top_apps'] || '',
+    fashion_style:  r['출근_복장_스타일'] || r['fashion_style'] || '',
+    info_channel:   r['주_정보_채널'] || r['info_channel'] || '',
+    device:         r['주_사용_기기'] || r['device'] || '',
+    it_level:       r['IT_숙련도'] || r['it_level'] || '',
+    pain_points:    r['Pain_Points'] || r['pain_points'] || '',
+    goals:          r['최종_목표'] || r['goals'] || '',
+    identity:       r['나는누구인가'] || r['identity'] || '',
+    aesthetic:      r['추구미'] || r['aesthetic'] || '',
+    unmet_needs:    r['Unmet_Needs'] || r['unmet_needs'] || '',
+    review_text:    r['전체_리뷰_통합'] || r['review_text'] || '',
+    purchase_reasons:   r['구매이유'] || r['purchase_reasons'] || '',
+    install_locations:  r['설치장소'] || r['install_locations'] || '',
+    positive_keywords:  r['긍정키워드'] || r['positive_keywords'] || '',
+    negative_keywords:  r['부정키워드'] || r['negative_keywords'] || '',
+  }));
+
+  const { error: pErr } = await sb.from('personas').insert(personaRows);
+  if (pErr) { showToast('페르소나 저장 실패: ' + pErr.message, 'error'); return; }
+
+  showToast(`✅ "${productName}" ${rows.length}명 업로드 완료!`, 'success');
+
+  // 제품 목록 새로고침 후 해당 제품으로 전환
+  await loadProducts();
+  document.getElementById('product-select').value = productId;
+  currentProductId = productId;
+  await loadProductData(productId);
+
+  event.target.value = '';
+}
+
+function parseCSVLine(line) {
+  const result = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQ = !inQ; }
+    else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+    else { cur += ch; }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+// ═══════════════════════ TAB ═══════════════════════
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + id).classList.add('active');
+  if (id === 'personas') renderPersonas();
+  if (id === 'focus') renderParts();
+  if (id === 'marketing') renderMarketing();
+  if (id === 'product') renderProduct();
+  if (id === 'compare') initCompare();
+}
+
+// ═══════════════════════ BARS ═══════════════════════
+function animateBars(container) {
+  (container || document).querySelectorAll('[data-w]').forEach(el => {
+    const w = el.dataset.w; el.style.width = '0';
+    setTimeout(() => { el.style.width = w; }, 150);
+  });
+}
+
+// ═══════════════════════ OVERVIEW ═══════════════════════
+function topN(map, n) { return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n); }
+function countMap(ps, fn) {
+  const m = {};
+  ps.forEach(p => { const k = fn(p); if(k) m[k]=(m[k]||0)+1; });
+  return m;
+}
+function barRows(entries, total, colors) {
+  const cls = ['bf-g','bf-b','bf-r','bf-p','bf-o'];
+  return entries.map(([k,v],i)=>`
+    <div class="bar-item">
+      <span class="bar-label" title="${k}">${k.length>13?k.substring(0,13)+'…':k}</span>
+      <div class="bar-track"><div class="bar-fill ${cls[i%cls.length]}" style="width:0" data-w="${Math.round(v/total*100)}%"></div></div>
+      <span class="bar-pct">${Math.round(v/total*100)}%</span>
+      <span class="bar-n" style="font-size:.65rem;color:var(--muted);margin-left:3px">(${v}명)</span>
+    </div>`).join('');
+}
+
+function renderOverview() {
+  const ps = currentPersonas;
+  if (ps.length === 0) { showEmptyState(); return; }
+  const total = ps.length;
+  const prod = allProducts.find(p => p.id === currentProductId);
+  const pct = n => Math.round(n/total*100);
+
+  // ── 성별
+  const genderMap = countMap(ps, p=>p.gender);
+  const topGender = topN(genderMap,1)[0];
+  const genderEntries = topN(genderMap, 5);
+
+  // ── 연령대 (앞 6자 그룹핑)
+  const ageMap = countMap(ps, p=>(p.age||'').substring(0,6).trim());
+  const ageEntries = topN(ageMap, 6);
+  const topAge = ageEntries[0]?.[0] || '-';
+
+  // ── 소득수준 (앞 4자 그룹핑)
+  const incomeMap = countMap(ps, p=>(p.income||'').substring(0,4).trim());
+  const topIncome = topN(incomeMap,1)[0]?.[0] || '-';
+  const incomeEntries = topN(incomeMap, 5);
+
+  // ── 평균 리뷰
+  const avgReviews = Math.round(ps.reduce((s,p)=>s+(p.total_reviews||0),0)/total*10)/10;
+
+  // ── 가구 유형
+  const married = ps.filter(p=>(p.married||'').includes('기혼')).length;
+  const childrenYes = ps.filter(p=>p.children&&!p.children.includes('없')&&!p.children.includes('불명')&&!p.children.includes('없음')).length;
+  const single = total - married;
+  const marriedNoChild = married - childrenYes;
+
+  // ── 반려동물
+  const petDog = ps.filter(p=>p.pet&&(p.pet.includes('개')||p.pet.includes('강아지'))).length;
+  const petCat = ps.filter(p=>p.pet&&p.pet.includes('고양이')).length;
+  const petOther = ps.filter(p=>p.pet&&!p.pet.includes('없')&&!p.pet.includes('불명')&&!p.pet.includes('없음')&&!p.pet.includes('개')&&!p.pet.includes('강아지')&&!p.pet.includes('고양이')).length;
+  const petNone = total - petDog - petCat - petOther;
+
+  // ── 직업군 (앞 8자)
+  const jobMap = countMap(ps, p=>(p.job||'').substring(0,12).trim());
+  const jobEntries = topN(jobMap, 5);
+
+  // ── 거주지역 (앞 8자)
+  const regionMap = countMap(ps, p=>(p.region_style||'').substring(0,10).trim());
+  const regionEntries = topN(regionMap, 5);
+
+  // ── 주사용기기 (앞 10자)
+  const deviceMap = countMap(ps, p=>{
+    const d = (p.device||'').trim();
+    if(d.includes('Android')||d.includes('갤럭시')||d.includes('Galaxy')) return 'Android';
+    if(d.includes('iOS')||d.includes('아이폰')||d.includes('iPhone')) return 'iOS';
+    if(d.includes('추정불가')||d.includes('불명')) return '추정불가';
+    return d.substring(0,10)||null;
+  });
+  const deviceEntries = topN(deviceMap, 5);
+
+  // ── IT 숙련도
+  const itHigh = ps.filter(p=>(p.it_level||'').includes('높')||(p.it_level||'').includes('매우')).length;
+  const itMid = ps.filter(p=>(p.it_level||'').includes('중')).length;
+  const itLow = total - itHigh - itMid;
+
+  // ── 정보채널
+  const channelMap = {};
+  ps.forEach(p=>{(p.info_channel||'').split(/[,·\/]+/).forEach(c=>{const k=c.trim().substring(0,10); if(k.length>1) channelMap[k]=(channelMap[k]||0)+1;});});
+  const channelEntries = topN(channelMap, 6);
+
+  // ── 추구미
+  const aestheticMap = countMap(ps, p=>(p.aesthetic||'').substring(0,15).trim()||null);
+  const aestheticEntries = topN(aestheticMap, 5);
+
+  // ── Pain Points (쉼표/마침표 분리, 앞 18자)
+  const painMap = {};
+  ps.forEach(p=>{(p.pain_points||'').split(/[,\.·]+/).forEach(pp=>{const k=pp.trim().substring(0,18); if(k.length>3) painMap[k]=(painMap[k]||0)+1;});});
+  const topPains = topN(painMap, 6);
+
+  // ── Unmet Needs
+  const unmetMap = {};
+  ps.forEach(p=>{(p.unmet_needs||'').split(/[,\.·]+/).forEach(u=>{const k=u.trim().substring(0,20); if(k.length>3) unmetMap[k]=(unmetMap[k]||0)+1;});});
+  const topUnmet = topN(unmetMap, 5);
+
+  document.getElementById('tab-overview').innerHTML = `
+    <!-- 핵심 지표 -->
+    <div class="stats-row">
+      <div class="stat-card c1"><div class="s-label">총 페르소나</div><div class="s-val">${total}명</div><div class="s-sub">${prod?.name||''} 구매자</div></div>
+      <div class="stat-card c2"><div class="s-label">주요 성별</div><div class="s-val">${topGender?.[0]||'-'}</div><div class="s-sub">${topGender?.[1]||0}명 · ${pct(topGender?.[1]||0)}% 비중</div></div>
+      <div class="stat-card c3"><div class="s-label">주요 연령대</div><div class="s-val">${topAge}</div><div class="s-sub">${ageEntries[0]?.[1]||0}명 · ${pct(ageEntries[0]?.[1]||0)}% 비중</div></div>
+      <div class="stat-card c4"><div class="s-label">대표 소득층</div><div class="s-val">${topIncome}</div><div class="s-sub">${incomeEntries[0]?.[1]||0}명 · ${pct(incomeEntries[0]?.[1]||0)}% 비중</div></div>
+      <div class="stat-card c5"><div class="s-label">평균 리뷰 수</div><div class="s-val">${avgReviews}</div><div class="s-sub">1인당 작성 리뷰</div></div>
+    </div>
+
+    <!-- 인구통계 섹션 -->
+    <div class="sec-title" style="margin-bottom:14px">인구통계 분포 <small>전체 ${total}명 기준</small></div>
+    <div class="insight-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-bottom:28px">
+
+      <div class="insight-card"><h3>성별 분포</h3>
+        ${barRows(genderEntries, total)}
+      </div>
+
+      <div class="insight-card"><h3>연령대 분포</h3>
+        ${barRows(ageEntries, total)}
+      </div>
+
+      <div class="insight-card"><h3>소득 수준</h3>
+        ${barRows(incomeEntries, total)}
+      </div>
+
+      <div class="insight-card"><h3>가구 유형</h3>
+        ${barRows([['기혼·자녀 있음',childrenYes],['기혼·자녀 없음',marriedNoChild],['미혼 / 불명',single]], total)}
+      </div>
+
+      <div class="insight-card"><h3>반려동물 보유</h3>
+        ${barRows([['개·강아지',petDog],['고양이',petCat],['기타 반려동물',petOther],['없음 / 불명',petNone]], total)}
+      </div>
+
+      <div class="insight-card"><h3>거주 지역 유형</h3>
+        ${regionEntries.length ? barRows(regionEntries, total) : '<div style="color:var(--muted);font-size:.8rem">데이터 없음</div>'}
+      </div>
+
+      <div class="insight-card"><h3>추정 직업군</h3>
+        ${barRows(jobEntries, total)}
+      </div>
+
+      <div class="insight-card"><h3>주요 사용 기기</h3>
+        ${barRows(deviceEntries, total)}
+      </div>
+    </div>
+
+    <!-- 라이프스타일 섹션 -->
+    <div class="sec-title" style="margin-bottom:14px">라이프스타일 & 채널 <small>전체 ${total}명 기준</small></div>
+    <div class="insight-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-bottom:28px">
+
+      <div class="insight-card"><h3>주요 정보 탐색 채널</h3>
+        ${barRows(channelEntries, total)}
+      </div>
+
+      <div class="insight-card"><h3>IT 숙련도</h3>
+        ${barRows([['높음/매우높음',itHigh],['중급/중상',itMid],['낮음/불명',itLow]], total)}
+      </div>
+
+      ${aestheticEntries.length ? `<div class="insight-card"><h3>추구미</h3>
+        ${barRows(aestheticEntries, total)}
+      </div>` : ''}
+    </div>
+
+    <!-- Pain Points -->
+    <div class="sec-title" style="margin-bottom:12px">공통 Pain Points <small>${total}명 종합 · 빈도순</small></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:28px">
+      ${topPains.map(([k,v])=>`
+        <div class="pain-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span>${k}</span>
+          <span style="flex-shrink:0;font-size:.72rem;background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.25);border-radius:12px;padding:2px 8px;color:var(--accent2)">${v}명 · ${pct(v)}%</span>
+        </div>`).join('')}
+    </div>
+
+    <!-- Unmet Needs -->
+    ${topUnmet.length ? `
+    <div class="sec-title" style="margin-bottom:12px">Unmet Needs <small>충족되지 않은 핵심 니즈 · 빈도순</small></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      ${topUnmet.map(([k,v])=>`
+        <div class="pain-item" style="border-left-color:var(--purple);display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span>${k}</span>
+          <span style="flex-shrink:0;font-size:.72rem;background:rgba(176,107,255,.12);border:1px solid rgba(176,107,255,.25);border-radius:12px;padding:2px 8px;color:var(--purple)">${v}명 · ${pct(v)}%</span>
+        </div>`).join('')}
+    </div>` : ''}
+  `;
+  setTimeout(() => animateBars(), 100);
+}
+
+// ═══════════════════════ REVIEW ═══════════════════════
+function renderReview() {
+  const tab = document.getElementById('tab-review');
+  const ins = currentInsight;
+  const prod = allProducts.find(p => p.id === currentProductId);
+
+  if (!ins) {
+    // 분석 전 — AI 분석 버튼 표시
+    tab.innerHTML = `
+      <div class="ri-header">
+        <div class="ri-prod-badge">📦 ${prod?.name||'제품'}</div>
+        <div class="ri-meta">${currentPersonas.length}명 페르소나 · 리뷰 분석 대기 중</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:32px;text-align:center;max-width:560px;margin:40px auto;">
+        <div style="font-size:2.5rem;margin-bottom:16px">🤖</div>
+        <div style="font-size:1.05rem;font-weight:700;color:#fff;margin-bottom:10px">AI 리뷰 인사이트 자동 분석</div>
+        <div style="font-size:.84rem;color:var(--muted);line-height:1.7;margin-bottom:8px">
+          페르소나들의 리뷰 텍스트에서<br>
+          <strong style="color:var(--accent)">"${prod?.name||'현재 제품'}"</strong> 관련 내용만 자동으로 추출해<br>
+          구매이유 · 설치장소 · 긍정/부정 키워드 · 종합 인사이트를 생성합니다.
+        </div>
+        <div style="font-size:.76rem;color:var(--muted);margin-bottom:22px;padding:8px 14px;background:var(--surface2);border-radius:7px;display:inline-block">
+          ⏱ 분석 소요시간: 약 30~60초 · 결과는 DB에 저장되어 다음부터 즉시 표시
+        </div>
+        <br>
+        <button onclick="runReviewAnalysis()" id="ai-analyze-btn" style="background:var(--accent);color:#000;border:none;border-radius:9px;padding:13px 36px;font-family:'Noto Sans KR',sans-serif;font-size:.95rem;font-weight:700;cursor:pointer;transition:opacity .2s">
+          🔍 AI 분석 시작하기
+        </button>
+      </div>
+      <div id="analyze-log" style="max-width:560px;margin:0 auto;"></div>`;
+    return;
+  }
+
+  renderReviewData(ins, prod);
+}
+
+function renderReviewData(ins, prod) {
+  const tab = document.getElementById('tab-review');
+  let pr=[], il=[], pos=[], neg=[];
+  try { pr = JSON.parse(ins.purchase_reasons||'[]'); } catch(e){}
+  try { il = JSON.parse(ins.install_locations||'[]'); } catch(e){}
+  try { pos = JSON.parse(ins.positive_top5||'[]'); } catch(e){}
+  try { neg = JSON.parse(ins.negative_top5||'[]'); } catch(e){}
+  const total = currentPersonas.length;
+
+  // 정량 수치 계산 — 구매이유/긍정/부정 언급 페르소나 수
+  const countMentions = (keyword) =>
+    currentPersonas.filter(p => (p.review_text||'').includes(keyword.substring(0,6))).length;
+
+  tab.innerHTML = `
+    <div class="ri-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="ri-prod-badge">📦 ${prod?.name||''}</div>
+        <div class="ri-meta">${total}명 페르소나 리뷰 기반 · AI 자동 분석</div>
+      </div>
+      <button onclick="reAnalyze()" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 14px;color:var(--muted);font-family:'Noto Sans KR',sans-serif;font-size:.76rem;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+        🔄 재분석
+      </button>
+    </div>
+
+    <div class="stats-row" style="margin-bottom:24px">
+      <div class="stat-card c1"><div class="s-label">구매 이유</div><div class="s-val">${pr.length}가지</div><div class="s-sub">${pr[0]?.reason?.substring(0,8)||'-'}</div></div>
+      <div class="stat-card c2"><div class="s-label">주 설치 장소</div><div class="s-val">${il[0]?.location?.substring(0,4)||'-'}</div><div class="s-sub">${il[0]?.pct||0}% 비중</div></div>
+      <div class="stat-card c3"><div class="s-label">긍정 TOP 키워드</div><div class="s-val">${pos[0]?.keyword||'-'}</div><div class="s-sub">긍정 1위</div></div>
+      <div class="stat-card c4"><div class="s-label">부정 TOP 키워드</div><div class="s-val">${neg[0]?.keyword||'-'}</div><div class="s-sub">부정 1위</div></div>
+      <div class="stat-card c5"><div class="s-label">분석 리뷰어</div><div class="s-val">${total}명</div><div class="s-sub">제품 언급 페르소나</div></div>
+    </div>
+
+    <div class="ri-grid">
+      <!-- 구매 이유 -->
+      <div class="ri-card">
+        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(200,255,0,0.1)">🛒</div><div><div class="ri-card-title">구매 이유 TOP${pr.length}</div><div class="ri-card-sub">왜 이 제품을 선택했는가</div></div></div>
+        <div class="reason-list">
+          ${pr.map(r=>{
+            const n = countMentions(r.reason);
+            const p = Math.round(n/total*100);
+            return `<div class="reason-item">
+              <div class="reason-rank">${r.rank}</div>
+              <div style="flex:1">
+                <div class="reason-text"><strong>${r.reason}</strong> — ${r.detail}</div>
+                ${r.quote?`<div class="reason-quote">"${r.quote}"</div>`:''}
+                <div style="display:flex;align-items:center;gap:7px;margin-top:6px">
+                  <div style="flex:1;height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:0;height:100%;background:var(--accent);border-radius:2px;transition:width 1.2s ease" data-w="${p}%"></div></div>
+                  <span style="font-size:.68rem;color:var(--muted);flex-shrink:0">${n}명 언급 · ${p}%</span>
+                </div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- 설치 장소 -->
+      <div class="ri-card">
+        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(107,197,255,0.1)">📍</div><div><div class="ri-card-title">설치 장소</div><div class="ri-card-sub">어디에 두고 쓰는가</div></div></div>
+        <div class="loc-list">
+          ${il.map(l=>`
+            <div class="loc-item">
+              <div class="loc-icon">${l.icon||'📍'}</div>
+              <div class="loc-body">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <div class="loc-name">${l.location}</div>
+                  <div style="font-size:.72rem;color:var(--accent3);font-weight:700">${l.pct}%</div>
+                </div>
+                <div class="loc-detail">${l.detail}</div>
+                <div class="loc-bar-track"><div class="loc-bar-fill" style="width:0" data-w="${l.pct}%"></div></div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- 긍정 TOP5 -->
+      <div class="ri-card">
+        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(200,255,0,0.1)">👍</div><div><div class="ri-card-title">긍정 키워드 TOP5</div><div class="ri-card-sub">언급 빈도·강도 기준</div></div></div>
+        <div class="top5-list">
+          ${pos.map(p=>{
+            const n = countMentions(p.keyword);
+            const pct2 = Math.round(n/total*100);
+            return `<div class="top5-item pos">
+              <div class="t5-rank">T${p.rank}</div>
+              <div style="flex:1">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <div class="t5-kw">${p.keyword}</div>
+                  <span style="font-size:.68rem;color:var(--accent);background:rgba(200,255,0,.1);border-radius:10px;padding:1px 7px">${n}명 · ${pct2}%</span>
+                </div>
+                <div class="t5-desc">${p.desc}</div>
+                <div style="margin-top:5px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:0;height:100%;background:var(--accent);border-radius:2px;transition:width 1.2s ease" data-w="${pct2}%"></div></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- 부정 TOP5 -->
+      <div class="ri-card">
+        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(255,107,107,0.1)">👎</div><div><div class="ri-card-title">부정 키워드 TOP5</div><div class="ri-card-sub">언급 빈도·강도 기준</div></div></div>
+        <div class="top5-list">
+          ${neg.map(n=>{
+            const cnt = countMentions(n.keyword);
+            const pct2 = Math.round(cnt/total*100);
+            return `<div class="top5-item neg">
+              <div class="t5-rank">T${n.rank}</div>
+              <div style="flex:1">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <div class="t5-kw">${n.keyword}</div>
+                  <span style="font-size:.68rem;color:var(--accent2);background:rgba(255,107,107,.1);border-radius:10px;padding:1px 7px">${cnt}명 · ${pct2}%</span>
+                </div>
+                <div class="t5-desc">${n.desc}</div>
+                <div style="margin-top:5px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:0;height:100%;background:var(--accent2);border-radius:2px;transition:width 1.2s ease" data-w="${pct2}%"></div></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- 종합 인사이트 -->
+      <div class="ri-card full">
+        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(176,107,255,0.1)">💡</div><div><div class="ri-card-title">AI 종합 인사이트</div><div class="ri-card-sub">리뷰 전체 핵심 요약</div></div></div>
+        <div class="ri-summary">${ins.summary||''}</div>
+      </div>
+    </div>`;
+  setTimeout(() => animateBars(tab), 100);
+}
+
+async function runReviewAnalysis() {
+  const btn = document.getElementById('ai-analyze-btn');
+  const log = document.getElementById('analyze-log');
+  const prod = allProducts.find(p => p.id === currentProductId);
+  const prodName = prod?.name || '';
+
+  if (!prodName) { showToast('제품명을 확인할 수 없습니다.', 'error'); return; }
+  if (currentPersonas.length === 0) { showToast('페르소나 데이터가 없습니다.', 'error'); return; }
+
+  btn.disabled = true;
+  btn.textContent = '🔄 분석 중... (30~60초 소요)';
+
+  const addLog = (msg) => {
+    log.innerHTML += `<div style="font-size:.78rem;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border)">${msg}</div>`;
+  };
+
+  addLog(`📌 제품명 키워드: <strong style="color:var(--accent)">"${prodName}"</strong> 로 필터링`);
+
+  // 제품명에서 핵심 키워드 추출 (예: "LG 워시콤보 3in1" → ["워시콤보", "LG", "FH25VA"])
+  const keywords = prodName.split(/\s+/).filter(k => k.length > 1);
+
+  // 각 페르소나의 리뷰에서 제품 관련 내용만 추출
+  const relevantReviews = [];
+  let matchCount = 0;
+
+  currentPersonas.forEach(p => {
+    const reviewText = p.review_text || '';
+    const purchaseText = (p.purchase_reasons || '') + ' ' + (p.install_locations || '');
+
+    // 제품명 키워드 중 하나라도 포함된 문장만 추출
+    const sentences = reviewText.split(/[.!?\/\[\]]+/).filter(s => s.trim().length > 10);
+    const relevant = sentences.filter(s =>
+      keywords.some(kw => s.includes(kw))
+    );
+
+    if (relevant.length > 0) {
+      matchCount++;
+      relevantReviews.push({
+        name: p.profile_name || '?',
+        text: relevant.slice(0, 3).join('. ').substring(0, 500)
+      });
+    }
+  });
+
+  addLog(`✅ ${currentPersonas.length}명 중 <strong style="color:var(--accent)">${matchCount}명</strong>의 리뷰에서 제품 관련 내용 발견`);
+
+  if (matchCount === 0) {
+    addLog(`⚠️ 제품명 "${prodName}" 관련 리뷰가 없습니다. 제품명이 리뷰 텍스트와 일치하는지 확인해주세요.`);
+    btn.disabled = false;
+    btn.textContent = '🔍 AI 분석 시작하기';
+    return;
+  }
+
+  addLog(`🤖 Claude AI가 ${matchCount}개 리뷰를 분석 중...`);
+
+  // 리뷰 샘플 (토큰 절약을 위해 최대 30개)
+  const sample = relevantReviews.slice(0, 30).map(r => `[${r.name}] ${r.text}`).join('\n\n');
+  const total = currentPersonas.length;
+
+  const prompt = `당신은 소비자 리뷰 분석 전문가입니다.
+아래는 "${prodName}" 제품을 구매한 ${matchCount}명의 실제 리뷰 내용입니다. (전체 페르소나 ${total}명)
+
+리뷰 내용:
+${sample}
+
+위 리뷰를 분석해서 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이 JSON만:
+
+{
+  "purchase_reasons": [
+    {"rank":1,"reason":"이유 키워드(10자 이내)","detail":"구체적 설명(30자 이내)","quote":"실제 리뷰 인용구(30자 이내)","mention_count":언급_페르소나_수},
+    {"rank":2,"reason":"...","detail":"...","quote":"...","mention_count":숫자},
+    {"rank":3,"reason":"...","detail":"...","quote":"...","mention_count":숫자}
+  ],
+  "install_locations": [
+    {"location":"설치장소명","icon":"이모지","detail":"상세설명","pct":비율숫자},
+    {"location":"...","icon":"...","detail":"...","pct":숫자}
+  ],
+  "positive_top5": [
+    {"rank":1,"keyword":"키워드(6자이내)","desc":"설명(30자이내)","mention_count":언급수},
+    {"rank":2,"keyword":"...","desc":"...","mention_count":숫자},
+    {"rank":3,"keyword":"...","desc":"...","mention_count":숫자},
+    {"rank":4,"keyword":"...","desc":"...","mention_count":숫자},
+    {"rank":5,"keyword":"...","desc":"...","mention_count":숫자}
+  ],
+  "negative_top5": [
+    {"rank":1,"keyword":"키워드(6자이내)","desc":"설명(30자이내)","mention_count":언급수},
+    {"rank":2,"keyword":"...","desc":"...","mention_count":숫자},
+    {"rank":3,"keyword":"...","desc":"...","mention_count":숫자},
+    {"rank":4,"keyword":"...","desc":"...","mention_count":숫자},
+    {"rank":5,"keyword":"...","desc":"...","mention_count":숫자}
+  ],
+  "summary": "종합 인사이트 3~4문장. 핵심 구매 동인, 주요 만족/불만 요소, 타겟 특성, 마케팅 시사점 포함."
+}`;
+
+  try {
+    const res = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await res.json();
+    const raw = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+    const result = JSON.parse(raw);
+
+    addLog('💾 분석 결과를 DB에 저장 중...');
+
+    // Supabase에 저장
+    const { error } = await sb.from('review_insights').upsert({
+      product_id: currentProductId,
+      product_name: prodName,
+      purchase_reasons: JSON.stringify(result.purchase_reasons),
+      install_locations: JSON.stringify(result.install_locations),
+      positive_top5: JSON.stringify(result.positive_top5),
+      negative_top5: JSON.stringify(result.negative_top5),
+      summary: result.summary
+    }, { onConflict: 'product_id' });
+
+    if (error) {
+      // onConflict 실패시 insert로 재시도
+      await sb.from('review_insights').insert({
+        product_id: currentProductId,
+        product_name: prodName,
+        purchase_reasons: JSON.stringify(result.purchase_reasons),
+        install_locations: JSON.stringify(result.install_locations),
+        positive_top5: JSON.stringify(result.positive_top5),
+        negative_top5: JSON.stringify(result.negative_top5),
+        summary: result.summary
+      });
+    }
+
+    addLog('✅ 저장 완료! 화면을 업데이트합니다.');
+    showToast('✅ 리뷰 인사이트 분석 완료!', 'success');
+
+    currentInsight = result;
+    currentInsight.purchase_reasons = JSON.stringify(result.purchase_reasons);
+    currentInsight.install_locations = JSON.stringify(result.install_locations);
+    currentInsight.positive_top5 = JSON.stringify(result.positive_top5);
+    currentInsight.negative_top5 = JSON.stringify(result.negative_top5);
+
+    setTimeout(() => renderReviewData(currentInsight, prod), 500);
+
+  } catch(e) {
+    addLog(`❌ 오류 발생: ${e.message}`);
+    showToast('분석 중 오류가 발생했습니다.', 'error');
+    btn.disabled = false;
+    btn.textContent = '🔍 AI 분석 시작하기';
+  }
+}
+
+async function reAnalyze() {
+  // 기존 인사이트 삭제 후 재분석
+  await sb.from('review_insights').delete().eq('product_id', currentProductId);
+  currentInsight = null;
+  renderReview();
+}
+
+// ═══════════════════════ PERSONAS ═══════════════════════
+function renderPersonas() {
+  const grid = document.getElementById('cards-grid');
+  if (grid.children.length > 0) return;
+  if (currentPersonas.length === 0) { grid.innerHTML = '<div class="empty-state"><div class="e-icon">👤</div><div class="e-title">페르소나 없음</div><div class="e-desc">CSV를 업로드해주세요.</div></div>'; return; }
+
+  currentPersonas.forEach((p, i) => {
+    const name = p.profile_name || p.name || `페르소나${i+1}`;
+    const card = document.createElement('div');
+    card.className = 'persona-card';
+    const hasPet = p.pet && !p.pet.includes('없') && !p.pet.includes('불명') && !p.pet.includes('없음');
+    const hasChild = p.children && !p.children.includes('없') && !p.children.includes('불명') && !p.children.includes('없음');
+    const isMarried = (p.married||'').includes('기혼');
+
+    card.innerHTML = `
+      <div class="pc-header">
+        <div class="pc-avatar" style="background:${p.color}1a;border:1.5px solid ${p.color}44">${p.emoji}</div>
+        <div><div class="pc-name">${name}</div><div class="pc-meta">${p.gender||''} · ${p.age||''}</div></div>
+      </div>
+      <div class="pc-body">
+        <div class="tag-row">
+          ${p.income?`<span class="tag tg">${p.income}</span>`:''}
+          ${p.married?`<span class="tag ${isMarried?'tb':''}">${p.married}</span>`:''}
+          <span class="tag ${hasChild?'tb':''}">자녀 ${hasChild?'있음':'없음'}</span>
+          <span class="tag ${hasPet?'tr':''}">🐾 ${hasPet?'있음':'없음'}</span>
+          ${p.it_level?`<span class="tag">IT ${p.it_level}</span>`:''}
+          ${p.region_style?`<span class="tag tp">📍 ${p.region_style.substring(0,8)}</span>`:''}
+        </div>
+        <div class="info2">
+          <div><div class="il">핵심 가치관</div><div class="iv">${p.core_values||p.values||'-'}</div></div>
+          <div><div class="il">주 기기</div><div class="iv">${p.device||'-'}</div></div>
+        </div>
+        ${p.pain_points?`<div class="pp-box"><div class="pp-label">Pain Points</div><div class="pp-text">${p.pain_points}</div></div>`:''}
+        ${p.goals?`<div class="goal-box"><div class="goal-label">최종 목표</div><div class="goal-text">${p.goals}</div></div>`:''}
+        ${p.identity?`<div class="identity-box"><div class="identity-label">나는 누구인가</div><div class="identity-text">${p.identity}</div></div>`:''}
+        <button class="expand-btn" onclick="toggleExtra(${i})"><span id="eico-${i}">＋</span> 상세 정보 더 보기</button>
+        <div class="extra" id="extra-${i}">
+          <div class="extra-grid">
+            <div><div class="il">라이프스타일</div><div class="iv">${p.lifestyle||'-'}</div></div>
+            <div><div class="il">거실 풍경</div><div class="iv">${p.living_room||'-'}</div></div>
+            <div><div class="il">TOP 3 앱</div><div class="iv">${p.top_apps||'-'}</div></div>
+            <div><div class="il">정보 채널</div><div class="iv">${p.info_channel||'-'}</div></div>
+            <div><div class="il">출근 복장</div><div class="iv">${p.fashion_style||'-'}</div></div>
+            <div><div class="il">추구미</div><div class="iv">${p.aesthetic||'-'}</div></div>
+            <div><div class="il">Unmet Needs</div><div class="iv">${p.unmet_needs||'-'}</div></div>
+            <div><div class="il">리뷰 수</div><div class="iv">${p.total_reviews||0}개</div></div>
+          </div>
+        </div>
+      </div>`;
+    grid.appendChild(card);
+  });
+}
+function toggleExtra(i) {
+  const el = document.getElementById('extra-'+i);
+  const ic = document.getElementById('eico-'+i);
+  el.classList.toggle('open');
+  ic.textContent = el.classList.contains('open') ? '－' : '＋';
+}
+
+// ═══════════════════════ FOCUS ═══════════════════════
+function renderParts() {
+  if (partsRendered) return;
+  partsRendered = true;
+  const grid = document.getElementById('part-grid');
+  grid.innerHTML = '';
+  selectedParts.clear();
+
+  currentPersonas.forEach((p, i) => {
+    const name = p.profile_name || p.name || `페르소나${i+1}`;
+    const c = document.createElement('div');
+    c.className = 'pcard selected';
+    c.id = 'pc-'+i; c.dataset.index = i;
+    c.dataset.married = p.married||''; c.dataset.children = p.children||''; c.dataset.pet = p.pet||'';
+    c.innerHTML = `<div class="p-av" style="background:${p.color}1a;border:1.5px solid ${p.color}44">${p.emoji}</div><div><div class="p-nm">${name}</div><div class="p-mt">${p.age||''}<br>${(p.job||'').length>14?(p.job||'').substring(0,14)+'…':(p.job||'')}</div></div><div class="chk">✓</div>`;
+    c.addEventListener('click', () => {
+      if (selectedParts.has(i)) { selectedParts.delete(i); c.classList.remove('selected'); }
+      else { selectedParts.add(i); c.classList.add('selected'); }
+      updateSelCount();
+    });
+    grid.appendChild(c);
+    selectedParts.add(i);
+  });
+  updateSelCount();
+}
+function updateSelCount() { document.getElementById('sel-count').textContent = selectedParts.size === 0 ? '선택된 참여자 없음' : `${selectedParts.size}명 선택됨`; }
+function filterPart(type, btn) {
+  document.querySelectorAll('.fchip').forEach(b => b.classList.remove('active')); btn.classList.add('active');
+  document.querySelectorAll('.pcard').forEach(c => {
+    let show = true;
+    if (type==='기혼') show = c.dataset.married.includes('기혼');
+    else if (type==='미혼') show = !c.dataset.married.includes('기혼');
+    else if (type==='자녀') show = c.dataset.children && !c.dataset.children.includes('없') && !c.dataset.children.includes('불명');
+    else if (type==='반려동물') show = c.dataset.pet && !c.dataset.pet.includes('없') && !c.dataset.pet.includes('불명');
+    c.classList.toggle('hidden', !show);
+  });
+}
+function selAll() { document.querySelectorAll('.pcard:not(.hidden)').forEach(c => { selectedParts.add(parseInt(c.dataset.index)); c.classList.add('selected'); }); updateSelCount(); }
+function deselAll() { document.querySelectorAll('.pcard').forEach(c => { selectedParts.delete(parseInt(c.dataset.index)); c.classList.remove('selected'); }); updateSelCount(); }
+function setQ(btn) { document.getElementById('focus-q').value = btn.textContent; }
+
+async function runFocus() {
+  const q = document.getElementById('focus-q').value.trim();
+  if (!q) return;
+  if (selectedParts.size === 0) { showToast('참여자를 선택해주세요.', 'error'); return; }
+  const btn = document.getElementById('focus-run');
+  btn.disabled = true; btn.textContent = '응답 생성 중...';
+  const resultsDiv = document.getElementById('focus-results');
+  resultsDiv.innerHTML = '';
+  const selected = [...selectedParts].sort();
+
+  const bar = document.createElement('div'); bar.className = 'focus-bar';
+  bar.innerHTML = `<div class="fb-label">참여자 ${selected.length}명</div><div class="fb-chips">${selected.map(i=>`<div class="fb-chip">${currentPersonas[i].emoji} ${currentPersonas[i].profile_name||currentPersonas[i].name||'?'}</div>`).join('')}</div>`;
+  resultsDiv.appendChild(bar);
+
+  selected.forEach((i, idx) => {
+    const p = currentPersonas[i];
+    const name = p.profile_name || p.name || `페르소나${i+1}`;
+    const card = document.createElement('div'); card.className = 'resp-card'; card.id = 'rc-'+i;
+    card.innerHTML = `<div class="resp-head"><div class="p-av" style="width:32px;height:32px;font-size:.95rem;background:${p.color}1a;border:1.5px solid ${p.color}44;border-radius:50%;display:flex;align-items:center;justify-content:center">${p.emoji}</div><div><div class="resp-name">${name}</div><div class="resp-role">${p.age||''} · ${p.job||''}</div></div></div><div class="resp-text"><div class="dots"><span></span><span></span><span></span></div></div>`;
+    resultsDiv.appendChild(card);
+    setTimeout(() => card.classList.add('vis'), idx * 120);
+  });
+
+  for (const i of selected) {
+    const p = currentPersonas[i];
+    const prompt = `당신은 아래 특성을 가진 실제 소비자입니다. 자연스럽고 구어체로 3~5문장으로 응답해주세요. "저는 ~한 사람입니다"로 시작하지 마세요.
+
+특성:
+- 이름: ${p.profile_name||p.name||'?'}, ${p.gender||''}, ${p.age||''}
+- 직업: ${p.job||''}
+- 결혼: ${p.married||''}, 자녀: ${p.children||''}, 반려동물: ${p.pet||''}
+- 가치관: ${p.core_values||p.values||''}
+- 라이프스타일: ${p.lifestyle||''}
+- Pain Points: ${p.pain_points||''}
+- 목표: ${p.goals||''}
+- 나는 누구인가: ${p.identity||''}
+- 추구미: ${p.aesthetic||''}
+- Unmet Needs: ${p.unmet_needs||''}
+
+질문: ${q}`;
+
+    try {
+      const res = await fetch('/api/claude', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:300, messages:[{role:'user',content:prompt}] }) });
+      const data = await res.json();
+      const text = data.content?.[0]?.text || '응답 오류';
+      document.getElementById('rc-'+i).querySelector('.resp-text').innerHTML = `<p>${text}</p>`;
+    } catch(e) {
+      document.getElementById('rc-'+i).querySelector('.resp-text').innerHTML = `<p style="color:var(--muted)">응답 오류</p>`;
+    }
+  }
+  btn.disabled = false; btn.textContent = '💬 좌담회 시작하기';
+}
+
+// ═══════════════════════ COMPARE ═══════════════════════
+function initCompare() {
+  // 이미 채워진 경우 스킵
+  const sel = document.getElementById('cmp-sel-a');
+  if (sel.options.length > 1) return;
+  ['cmp-sel-a','cmp-sel-b'].forEach(id => {
+    const s = document.getElementById(id);
+    s.innerHTML = '<option value="">— 제품 선택 —</option>' + allProducts.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  });
+}
+function updateSlot(side) {
+  const sel = document.getElementById('cmp-sel-'+side);
+  document.getElementById('slot-'+side).classList.toggle('filled', sel.value !== '');
+}
+
+async function runCompare() {
+  const idA = parseInt(document.getElementById('cmp-sel-a').value);
+  const idB = parseInt(document.getElementById('cmp-sel-b').value);
+  if (!idA || !idB || idA === idB) { showToast('서로 다른 제품 2개를 선택해주세요.', 'error'); return; }
+
+  const btn = document.getElementById('cmp-run');
+  btn.disabled = true; btn.textContent = '분석 중...';
+  const out = document.getElementById('cmp-results');
+  out.innerHTML = `<div class="page-loading"><div class="dots"><span></span><span></span><span></span></div><div class="loading-text">두 제품 데이터 비교 중...</div></div>`;
+
+  const [{ data: psA }, { data: psB }, { data: insA }, { data: insB }] = await Promise.all([
+    sb.from('personas').select('*').eq('product_id', idA),
+    sb.from('personas').select('*').eq('product_id', idB),
+    sb.from('review_insights').select('*').eq('product_id', idA).limit(1),
+    sb.from('review_insights').select('*').eq('product_id', idB).limit(1),
+  ]);
+
+  const prodA = allProducts.find(p=>p.id===idA);
+  const prodB = allProducts.find(p=>p.id===idB);
+  const pA = (psA||[]).map((p,i)=>({...p,color:PERSONA_COLORS[i%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[i%PERSONA_EMOJIS.length]}));
+  const pB = (psB||[]).map((p,i)=>({...p,color:PERSONA_COLORS[(i+3)%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[(i+3)%PERSONA_EMOJIS.length]}));
+
+  // Claude로 비교 인사이트
+  const prompt = `두 제품 구매 고객 페르소나를 비교해서 JSON으로만 응답:
+
+제품A (${prodA?.name}): ${pA.map(p=>`${p.profile_name||'?'}(${p.age||''},가치관:${p.core_values||p.values||''},Pain:${p.pain_points||''},Unmet:${p.unmet_needs||''})`).join(' / ')}
+
+제품B (${prodB?.name}): ${pB.map(p=>`${p.profile_name||'?'}(${p.age||''},가치관:${p.core_values||p.values||''},Pain:${p.pain_points||''},Unmet:${p.unmet_needs||''})`).join(' / ')}
+
+{"common":["공통점1","공통점2","공통점3"],"only_a":["A특성1","A특성2","A특성3"],"only_b":["B특성1","B특성2","B특성3"],"strategy_a":"A 전략 (3문장)","strategy_b":"B 전략 (3문장)","differentiation":"차별화 포인트 (3문장)"}`;
+
+  let ai = null;
+  try {
+    const res = await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,messages:[{role:'user',content:prompt}]})});
+    const data = await res.json();
+    ai = JSON.parse((data.content?.[0]?.text||'{}').replace(/```json|```/g,'').trim());
+  } catch(e) { ai = null; }
+
+  renderCompareResult(prodA, prodB, pA, pB, insA?.[0], insB?.[0], ai);
+  btn.disabled = false; btn.textContent = '⚖️ 비교 분석 시작';
+}
+
+function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
+  const out = document.getElementById('cmp-results');
+  const d = ai || {common:['데이터 분석 중'],only_a:['분석 중'],only_b:['분석 중'],strategy_a:'분석 중',strategy_b:'분석 중',differentiation:'분석 중'};
+
+  const miniStats = (ps) => {
+    const total = ps.length; if(!total) return '<div style="color:var(--muted);font-size:.8rem">데이터 없음</div>';
+    const married = ps.filter(p=>(p.married||'').includes('기혼')).length;
+    const children = ps.filter(p=>p.children&&!p.children.includes('없')&&!p.children.includes('불명')).length;
+    const pet = ps.filter(p=>p.pet&&!p.pet.includes('없')&&!p.pet.includes('불명')).length;
+    const pct = n => Math.round(n/total*100);
+    return `
+      <div class="bar-item"><span class="bar-label" style="width:75px">기혼</span><div class="bar-track"><div class="bar-fill bf-b" style="width:0" data-w="${pct(married)}%"></div></div><span class="bar-pct">${pct(married)}%</span></div>
+      <div class="bar-item"><span class="bar-label" style="width:75px">자녀 있음</span><div class="bar-track"><div class="bar-fill bf-g" style="width:0" data-w="${pct(children)}%"></div></div><span class="bar-pct">${pct(children)}%</span></div>
+      <div class="bar-item"><span class="bar-label" style="width:75px">반려동물</span><div class="bar-track"><div class="bar-fill bf-o" style="width:0" data-w="${pct(pet)}%"></div></div><span class="bar-pct">${pct(pet)}%</span></div>`;
+  };
+
+  const top5Html = (items, type) => (items||[]).slice(0,3).map(x=>`<div class="top5-item ${type}" style="margin-bottom:5px"><div class="t5-rank">T${x.rank}</div><div><div class="t5-kw">${x.keyword}</div><div class="t5-desc">${x.desc}</div></div></div>`).join('');
+  let posA=[],negA=[],posB=[],negB=[];
+  try{posA=JSON.parse(insA?.positive_top5||'[]');}catch(e){}
+  try{negA=JSON.parse(insA?.negative_top5||'[]');}catch(e){}
+  try{posB=JSON.parse(insB?.positive_top5||'[]');}catch(e){}
+  try{negB=JSON.parse(insB?.negative_top5||'[]');}catch(e){}
+
+  out.innerHTML = `
+  <!-- 개요 비교 -->
+  <div class="cmp-section">
+    <div class="cmp-sec-hd"><div class="cmp-sec-icon">📊</div><div><div class="cmp-sec-title">페르소나 개요 비교</div><div class="cmp-sec-sub">두 제품 구매자 기본 특성</div></div></div>
+    <div class="cmp-2col">
+      <div class="cmp-col cmp-col-a"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent)"></div><div><div class="cmp-col-name">${prodA?.name||''}</div><div class="cmp-col-cnt">페르소나 ${pA.length}명</div></div></div>${miniStats(pA)}</div>
+      <div class="cmp-col cmp-col-b"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent3)"></div><div><div class="cmp-col-name">${prodB?.name||''}</div><div class="cmp-col-cnt">페르소나 ${pB.length}명</div></div></div>${miniStats(pB)}</div>
+    </div>
+  </div>
+  <!-- 리뷰 비교 -->
+  ${(insA||insB)?`<div class="cmp-section">
+    <div class="cmp-sec-hd"><div class="cmp-sec-icon">🔍</div><div><div class="cmp-sec-title">리뷰 인사이트 비교</div><div class="cmp-sec-sub">긍정·부정 키워드 나란히</div></div></div>
+    <div class="cmp-2col">
+      <div class="cmp-col cmp-col-a"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent)"></div><div><div class="cmp-col-name">${prodA?.name||''}</div></div></div>
+        ${posA.length?`<div style="font-size:.7rem;color:var(--accent);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👍 긍정</div>${top5Html(posA,'pos')}`:'<div style="color:var(--muted);font-size:.8rem">데이터 없음</div>'}
+        ${negA.length?`<div style="font-size:.7rem;color:var(--accent2);margin-top:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👎 부정</div>${top5Html(negA,'neg')}`:''}
+      </div>
+      <div class="cmp-col cmp-col-b"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent3)"></div><div><div class="cmp-col-name">${prodB?.name||''}</div></div></div>
+        ${posB.length?`<div style="font-size:.7rem;color:var(--accent3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👍 긍정</div>${top5Html(posB,'pos').replace(/class="top5-item pos"/g,'class="top5-item" style="border-left:3px solid var(--accent3);background:var(--surface2)"')}`:'<div style="color:var(--muted);font-size:.8rem">데이터 없음</div>'}
+        ${negB.length?`<div style="font-size:.7rem;color:var(--accent2);margin-top:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👎 부정</div>${top5Html(negB,'neg')}`:''}
+      </div>
+    </div>
+  </div>`:''}
+  <!-- 동시 좌담회 -->
+  <div class="cmp-section">
+    <div class="cmp-sec-hd"><div class="cmp-sec-icon">🎤</div><div><div class="cmp-sec-title">두 제품 고객 동시 좌담회</div><div class="cmp-sec-sub">같은 질문, 서로 다른 고객의 답변</div></div></div>
+    <div class="survey-box" style="margin-bottom:16px">
+      <textarea class="q-input" id="cmp-focus-q" placeholder="두 제품 고객에게 동시에 물어볼 질문을 입력하세요..." style="margin-bottom:10px"></textarea>
+      <button class="run-btn" id="cmp-focus-run" onclick="runCmpFocus(${prodA?.id},${prodB?.id})">💬 동시에 물어보기</button>
+    </div>
+    <div class="cmp-focus-grid">
+      <div><div class="cmp-focus-hd cmp-fa-hd">📦 ${prodA?.name||''} 고객</div><div class="cmp-focus-col" id="cmp-resp-a"></div></div>
+      <div><div class="cmp-focus-hd cmp-fb-hd">📦 ${prodB?.name||''} 고객</div><div class="cmp-focus-col" id="cmp-resp-b"></div></div>
+    </div>
+  </div>
+  <!-- 마케팅 인사이트 비교 -->
+  <div class="cmp-section">
+    <div class="cmp-sec-hd"><div class="cmp-sec-icon">💡</div><div><div class="cmp-sec-title">마케팅 인사이트 비교</div><div class="cmp-sec-sub">공통점·차이점·제품별 차별화 전략</div></div></div>
+    <div class="diff-grid">
+      <div class="diff-card common"><div class="diff-label">🔗 공통점</div>${d.common.map(x=>`<div class="diff-item">${x}</div>`).join('')}</div>
+      <div class="diff-card only-a"><div class="diff-label">🟡 ${prodA?.name?.substring(0,10)||'제품A'} 특성</div>${d.only_a.map(x=>`<div class="diff-item">${x}</div>`).join('')}</div>
+      <div class="diff-card only-b"><div class="diff-label">🔵 ${prodB?.name?.substring(0,10)||'제품B'} 특성</div>${d.only_b.map(x=>`<div class="diff-item">${x}</div>`).join('')}</div>
+    </div>
+    <div class="cmp-2col" style="margin-top:14px">
+      <div class="cmp-col cmp-col-a"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent)"></div><div><div class="cmp-col-name">${prodA?.name||''} 전략</div></div></div><p style="font-size:.84rem;line-height:1.7">${d.strategy_a}</p></div>
+      <div class="cmp-col cmp-col-b"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent3)"></div><div><div class="cmp-col-name">${prodB?.name||''} 전략</div></div></div><p style="font-size:.84rem;line-height:1.7">${d.strategy_b}</p></div>
+    </div>
+    <div style="background:rgba(176,107,255,0.07);border:1px solid rgba(176,107,255,0.2);border-radius:11px;padding:18px;margin-top:14px">
+      <div style="font-size:.68rem;color:var(--purple);text-transform:uppercase;letter-spacing:1px;margin-bottom:9px">🎯 제품 차별화 포인트</div>
+      <p style="font-size:.86rem;line-height:1.75">${d.differentiation}</p>
+    </div>
+  </div>`;
+
+  setTimeout(() => animateBars(out), 100);
+}
+
+async function runCmpFocus(idA, idB) {
+  const q = document.getElementById('cmp-focus-q').value.trim();
+  if (!q) { showToast('질문을 입력해주세요.', 'error'); return; }
+  const btn = document.getElementById('cmp-focus-run');
+  btn.disabled = true; btn.textContent = '응답 생성 중...';
+
+  const { data: psA } = await sb.from('personas').select('*').eq('product_id', idA);
+  const { data: psB } = await sb.from('personas').select('*').eq('product_id', idB);
+  const pA = (psA||[]).map((p,i)=>({...p,color:PERSONA_COLORS[i%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[i%PERSONA_EMOJIS.length],_prod:'a'}));
+  const pB = (psB||[]).map((p,i)=>({...p,color:PERSONA_COLORS[(i+3)%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[(i+3)%PERSONA_EMOJIS.length],_prod:'b'}));
+
+  const colA = document.getElementById('cmp-resp-a');
+  const colB = document.getElementById('cmp-resp-b');
+  colA.innerHTML = ''; colB.innerHTML = '';
+
+  const all = [...pA, ...pB];
+  all.forEach((p, idx) => {
+    const name = p.profile_name || p.name || `페르소나${idx+1}`;
+    const col = p._prod === 'a' ? colA : colB;
+    const card = document.createElement('div'); card.className = 'resp-card'; card.id = 'crc-'+idx;
+    card.innerHTML = `<div class="resp-head"><div class="p-av" style="width:30px;height:30px;font-size:.9rem;background:${p.color}1a;border:1.5px solid ${p.color}44;border-radius:50%;display:flex;align-items:center;justify-content:center">${p.emoji}</div><div><div class="resp-name">${name}</div><div class="resp-role">${p.age||''}</div></div></div><div class="resp-text"><div class="dots"><span></span><span></span><span></span></div></div>`;
+    col.appendChild(card);
+    setTimeout(() => card.classList.add('vis'), idx * 100);
+  });
+
+  for (let idx = 0; idx < all.length; idx++) {
+    const p = all[idx];
+    const name = p.profile_name || p.name || '?';
+    const prompt = `당신은 실제 소비자입니다. 구어체로 2~3문장으로 답해주세요.\n특성: ${name}, ${p.age||''}, ${p.job||''}, 가치관: ${p.core_values||p.values||''}, Pain: ${p.pain_points||''}, Unmet: ${p.unmet_needs||''}\n질문: ${q}`;
+    try {
+      const res = await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:180,messages:[{role:'user',content:prompt}]})});
+      const data = await res.json();
+      document.getElementById('crc-'+idx).querySelector('.resp-text').innerHTML = `<p>${data.content?.[0]?.text||'오류'}</p>`;
+    } catch(e) {
+      document.getElementById('crc-'+idx).querySelector('.resp-text').innerHTML = `<p style="color:var(--muted)">응답 오류</p>`;
+    }
+  }
+  btn.disabled = false; btn.textContent = '💬 동시에 물어보기';
+}
+
+// ═══════════════════════ MARKETING ═══════════════════════
+function renderMarketing() {
+  const grid = document.getElementById('idea-grid');
+  if (grid.children.length > 0) return;
+  if (currentPersonas.length === 0) { grid.innerHTML = '<div class="empty-state"><div class="e-icon">💡</div><div class="e-title">데이터 없음</div></div>'; return; }
+
+  const ps = currentPersonas;
+  const total = ps.length;
+  const petPct = Math.round(ps.filter(p=>p.pet&&!p.pet.includes('없')&&!p.pet.includes('불명')).length/total*100);
+  const childPct = Math.round(ps.filter(p=>p.children&&!p.children.includes('없')&&!p.children.includes('불명')).length/total*100);
+  const aesthetics = [...new Set(ps.map(p=>p.aesthetic).filter(Boolean))].slice(0,2).join('·');
+  const topChannel = ps.map(p=>p.info_channel||'').join(' ').includes('유튜브') ? '유튜브' : '온라인 커뮤니티';
+
+  const ideas = [
+    {cat:'광고 채널 전략', col:'#c8ff00',
+     title:`${topChannel} 중심 퍼포먼스 마케팅`,
+     desc:`페르소나 대다수가 ${topChannel}를 주 정보채널로 활용. 실사용 언박싱 + 효과 비교 형식의 리뷰 콘텐츠가 구매 결정에 직접 영향.`},
+    {cat:'메시지 전략', col:'#ff6b6b',
+     title:'Pain Point 직접 해결 카피',
+     desc:`페르소나 공통 Pain Points를 직접 해결하는 메시지 설계. "이 문제, 해결됩니까?" 형식의 솔직한 소구가 고관여 소비자에게 효과적.`},
+    {cat:'타겟 세분화', col:'#b06bff',
+     title:'페르소나별 크리에이티브 분리',
+     desc:`페르소나 유형(${ps.map(p=>p.profile_name||'?').slice(0,3).join('·')})은 Pain Point가 달라 동일 메시지 불가. 타겟별 광고 소재 별도 제작 필요.`},
+    ...(petPct >= 30 ? [{cat:'번들·크로스셀', col:'#6bc5ff',
+     title:`반려동물 케어 번들 구성`,
+     desc:`${petPct}%가 반려동물 보유. 본제품 + 펫 케어 액세서리 번들 패키지 시 크로스셀 및 객단가 상승 기회.`}] : []),
+    ...(childPct >= 30 ? [{cat:'채널 전략', col:'#ffb06b',
+     title:'맘카페 + 육아 유튜브 채널',
+     desc:`${childPct}%가 자녀 있음. 맘카페 협찬 리뷰 + 육아 유튜브 PPL 집행 시 구매 전환율 높음.`}] : []),
+    {cat:'리뷰 마케팅', col:'#ffb06b',
+     title:'씨드 리뷰어 UGC 전략',
+     desc:`페르소나 평균 리뷰 작성 수 높음. 구매 후 리뷰 요청 자동화 + 포토리뷰 인센티브 설계 시 UGC 확보 용이.`},
+    {cat:'채널 전략', col:'#c8ff00',
+     title:'쿠팡 내 광고 최우선 집행',
+     desc:`페르소나 대다수 쿠팡 앱 상위 사용. PPC보다 쿠팡 내 상품 노출·로켓배송 최적화가 전환에 직접 영향.`},
+    {cat:'콘텐츠 마케팅', col:'#ff6b6b',
+     title:`${aesthetics ? aesthetics + ' ' : ''}추구미 기반 SNS 콘텐츠`,
+     desc:`페르소나 인테리어·라이프스타일 민감. 제품을 "공간에 녹아드는 라이프스타일"로 포지셔닝한 인스타 릴스 효과적.`},
+    {cat:'고객 유지', col:'#b06bff',
+     title:'소모품·액세서리 정기배송 리텐션',
+     desc:`가성비·효율성 중시 성향. 구매 후 소모품 정기배송 구독 연결 시 LTV 증가 기회.`}
+  ];
+
+  ideas.forEach((idea, i) => {
+    idea.n = String(i+1).padStart(2,'0');
+    const card = document.createElement('div'); card.className = 'idea-card';
+    card.innerHTML = `<div class="idea-num">${idea.n}</div><div class="idea-cat" style="color:${idea.col}">${idea.cat}</div><div class="idea-ttl">${idea.title}</div><div class="idea-desc">${idea.desc}</div>`;
+    grid.appendChild(card);
+  });
+}
+
+// ═══════════════════════ PRODUCT PLANNING ═══════════════════════
+function renderProduct() {
+  const grid = document.getElementById('product-grid');
+  if (grid.children.length > 0) return;
+  if (currentPersonas.length === 0) { grid.innerHTML = '<div class="empty-state"><div class="e-icon">📦</div><div class="e-title">데이터 없음</div></div>'; return; }
+
+  const ps = currentPersonas;
+  const total = ps.length;
+  const petPct = Math.round(ps.filter(p=>p.pet&&!p.pet.includes('없')&&!p.pet.includes('불명')).length/total*100);
+  const childPct = Math.round(ps.filter(p=>p.children&&!p.children.includes('없')&&!p.children.includes('불명')).length/total*100);
+  const marriedPct = Math.round(ps.filter(p=>(p.married||'').includes('기혼')).length/total*100);
+  const unmetList = [...new Set(ps.flatMap(p=>(p.unmet_needs||'').split(/[,·]+/).map(u=>u.trim())).filter(u=>u.length>2))].slice(0,3);
+  const aesthetics = [...new Set(ps.map(p=>p.aesthetic).filter(Boolean))].slice(0,2).join('·');
+
+  const ideas = [
+    {cat:'기능 기획', col:'#c8ff00',
+     title:'Unmet Needs 기반 핵심 기능 도출',
+     desc:`페르소나 미충족 니즈: ${unmetList.length ? unmetList.join(', ') : '데이터 수집 중'}. 이 니즈를 직접 해결하는 기능을 최우선 로드맵에 반영해야 함.`},
+    {cat:'UX/UI 기획', col:'#ff6b6b',
+     title:'IT 숙련도 기반 인터페이스 설계',
+     desc:`페르소나 IT 수준이 중상~높음. 복잡한 설정 없이 직관적으로 쓸 수 있는 UX + 앱 연동 기능이 만족도에 직접 영향.`},
+    ...(petPct >= 30 ? [{cat:'특화 기능', col:'#6bc5ff',
+     title:`반려동물 특화 기능 추가 (${petPct}% 니즈)`,
+     desc:`${petPct}%가 반려동물 보유. 펫 전용 코스(저온·탈취·털 필터 강화 등) 탑재 시 명확한 구매 이유 생성 및 차별화 포인트 확보.`}] : []),
+    ...(childPct >= 30 ? [{cat:'안전·위생', col:'#ffb06b',
+     title:`영유아 안전 인증 및 위생 기능 (${childPct}% 니즈)`,
+     desc:`${childPct}%가 자녀 있음. KC 인증·스팀 살균·항균 소재 등 아이 안전 관련 스펙 강화 시 워킹맘 구매 전환율 향상.`}] : []),
+    ...(marriedPct >= 40 ? [{cat:'용량·구성', col:'#b06bff',
+     title:'가족 단위 용량 라인업 확장',
+     desc:`${marriedPct}%가 기혼 가구. 4인 가족 기준 빨래량을 소화하는 대용량 모델 추가 시 가족 타겟 업셀 기회.`}] : []),
+    {cat:'디자인 기획', col:'#ff6b6b',
+     title:`${aesthetics ? aesthetics + ' ' : ''}추구미 기반 CMF 전략`,
+     desc:`페르소나 인테리어 민감도 높음. 제품 색상·소재·형태(CMF)를 공간 인테리어와 어울리는 방향으로 설계 시 구매 결정 요인 추가.`},
+    {cat:'패키징·설치', col:'#c8ff00',
+     title:'방문설치·초기 경험 설계',
+     desc:`설치 편의성이 구매 이유로 언급됨. 방문설치 포함 옵션 유지 + 설치 후 첫 사용 가이드 동봉 시 초기 만족도 향상.`},
+    {cat:'가격 전략', col:'#6bc5ff',
+     title:'가성비 포지셔닝 또는 프리미엄 분리',
+     desc:`페르소나 소득 중산층 집중. 가성비 라인과 프리미엄 라인을 명확히 분리해 각각 다른 구매 동인에 소구하는 라인업 전략 필요.`},
+    {cat:'A/S·신뢰', col:'#b06bff',
+     title:'방문 A/S 보장을 핵심 스펙으로',
+     desc:`A/S 접근성이 구매 결정에 직접 영향. 방문 A/S 보장·무상 기간 연장·빠른 응대를 스펙 페이지 상단에 배치해야 함.`}
+  ];
+
+  ideas.forEach((idea, i) => {
+    idea.n = String(i+1).padStart(2,'0');
+    const card = document.createElement('div'); card.className = 'idea-card';
+    card.innerHTML = `<div class="idea-num">${idea.n}</div><div class="idea-cat" style="color:${idea.col}">${idea.cat}</div><div class="idea-ttl">${idea.title}</div><div class="idea-desc">${idea.desc}</div>`;
+    grid.appendChild(card);
+  });
+}
+
+// ═══════════════════════ TOAST ═══════════════════════
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast ${type} show`;
+  setTimeout(() => { t.classList.remove('show'); }, 3500);
+}
+</script>
+</body>
+</html>
