@@ -29,7 +29,8 @@ exports.handler = async (event) => {
       };
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+    // gemini-2.0-flash 사용 (현재 안정적으로 지원되는 모델)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
       method: 'POST',
