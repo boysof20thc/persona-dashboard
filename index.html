@@ -362,6 +362,16 @@ const SUPABASE_URL = 'https://zaczlobfbshsvmahfzjv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphY3psb2JmYnNoc3ZtYWhmemp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2NDY5MDgsImV4cCI6MjA4NzIyMjkwOH0.4UoDAy4vPw2FPI9UV5uztSlya060HJw57By53SBA-sM';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ── AI 호출 헬퍼 (Gemini via Netlify Function)
+async function callAI(prompt, max_tokens = 1000) {
+  const res = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, max_tokens })
+  });
+  return await res.json(); // { text: "..." }
+}
+
 // ═══════════════════════ STATE ═══════════════════════
 let allProducts = [];      // [{id, name, category}]
 let currentProductId = null;
@@ -1015,17 +1025,8 @@ ${sample}
 }`;
 
   try {
-    const res = await fetch('/api/claude', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await res.json();
-    const raw = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+    const data = await callAI(prompt, 2000);
+    const raw = (data.text || '').replace(/```json|```/g, '').trim();
     const result = JSON.parse(raw);
 
     addLog('💾 분석 결과를 DB에 저장 중...');
@@ -1222,9 +1223,8 @@ async function runFocus() {
 질문: ${q}`;
 
     try {
-      const res = await fetch('/api/claude', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:300, messages:[{role:'user',content:prompt}] }) });
-      const data = await res.json();
-      const text = data.content?.[0]?.text || '응답 오류';
+      const data = await callAI(prompt, 300);
+      const text = data.text || '응답 오류';
       document.getElementById('rc-'+i).querySelector('.resp-text').innerHTML = `<p>${text}</p>`;
     } catch(e) {
       document.getElementById('rc-'+i).querySelector('.resp-text').innerHTML = `<p style="color:var(--muted)">응답 오류</p>`;
@@ -1281,9 +1281,8 @@ async function runCompare() {
 
   let ai = null;
   try {
-    const res = await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,messages:[{role:'user',content:prompt}]})});
-    const data = await res.json();
-    ai = JSON.parse((data.content?.[0]?.text||'{}').replace(/```json|```/g,'').trim());
+    const data = await callAI(prompt, 800);
+    ai = JSON.parse((data.text||'{}').replace(/```json|```/g,'').trim());
   } catch(e) { ai = null; }
 
   renderCompareResult(prodA, prodB, pA, pB, insA?.[0], insB?.[0], ai);
@@ -1399,9 +1398,8 @@ async function runCmpFocus(idA, idB) {
     const name = p.profile_name || p.name || '?';
     const prompt = `당신은 실제 소비자입니다. 구어체로 2~3문장으로 답해주세요.\n특성: ${name}, ${p.age||''}, ${p.job||''}, 가치관: ${p.core_values||p.values||''}, Pain: ${p.pain_points||''}, Unmet: ${p.unmet_needs||''}\n질문: ${q}`;
     try {
-      const res = await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:180,messages:[{role:'user',content:prompt}]})});
-      const data = await res.json();
-      document.getElementById('crc-'+idx).querySelector('.resp-text').innerHTML = `<p>${data.content?.[0]?.text||'오류'}</p>`;
+      const data = await callAI(prompt, 180);
+      document.getElementById('crc-'+idx).querySelector('.resp-text').innerHTML = `<p>${data.text||'오류'}</p>`;
     } catch(e) {
       document.getElementById('crc-'+idx).querySelector('.resp-text').innerHTML = `<p style="color:var(--muted)">응답 오류</p>`;
     }
