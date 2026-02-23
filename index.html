@@ -161,6 +161,8 @@ nav::-webkit-scrollbar{height:0;}
 .part-hint{font-size:0.78rem;color:var(--muted);margin-bottom:12px;}
 .filter-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;}
 .fchip{background:var(--surface2);border:1px solid var(--border);border-radius:16px;padding:5px 12px;font-size:0.75rem;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .2s;}
+.sel-type-btn{background:transparent;border:1px solid var(--border);border-radius:7px;padding:4px 11px;font-size:.72rem;cursor:pointer;color:var(--muted);font-family:'Noto Sans KR',sans-serif;transition:all .2s;white-space:nowrap;}
+.sel-type-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(200,255,0,.06);}
 .fchip:hover{border-color:var(--accent);color:var(--accent);}
 .fchip.active{background:rgba(200,255,0,0.08);border-color:var(--accent);color:var(--accent);}
 .part-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:9px;}
@@ -303,19 +305,41 @@ nav::-webkit-scrollbar{height:0;}
   <div class="tab-panel" id="tab-focus">
     <div class="step-label"><span>STEP 1</span> 좌담회 참여자 선택</div>
     <div class="part-area">
-      <div class="part-hint">카드를 클릭해서 참여자를 선택하세요.</div>
-      <div class="filter-row">
-        <button class="fchip active" onclick="filterPart('all',this)">전체</button>
-        <button class="fchip" onclick="filterPart('기혼',this)">기혼</button>
-        <button class="fchip" onclick="filterPart('자녀',this)">자녀 있음</button>
-        <button class="fchip" onclick="filterPart('반려동물',this)">반려동물 있음</button>
-        <button class="fchip" onclick="filterPart('미혼',this)">미혼</button>
+      <div class="part-hint">카드를 클릭해서 참여자를 선택하거나, 아래 유형 버튼으로 해당 고객을 추가/해제하세요.</div>
+
+      <!-- 필터 보기 행 -->
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;flex-shrink:0">보기</span>
+        <button class="fchip active" onclick="showFilter('all',this)">전체</button>
+        <button class="fchip" onclick="showFilter('기혼',this)">기혼</button>
+        <button class="fchip" onclick="showFilter('미혼',this)">미혼</button>
+        <button class="fchip" onclick="showFilter('자녀',this)">자녀 있음</button>
+        <button class="fchip" onclick="showFilter('반려동물',this)">반려동물 있음</button>
+        <button class="fchip" onclick="showFilter('긍정형',this)">긍정형 리뷰어</button>
+        <button class="fchip" onclick="showFilter('브랜드충성형',this)">브랜드 충성</button>
+        <button class="fchip" onclick="showFilter('가성비탐색형',this)">가성비 탐색</button>
       </div>
+
+      <!-- 선택 행 (유형별 추가/해제 + 전체) -->
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap;padding:10px 12px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+        <span style="font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;flex-shrink:0">선택</span>
+        <button class="sel-type-btn" onclick="selByType('all')">전체 추가</button>
+        <button class="sel-type-btn" onclick="deselByType('all')">전체 해제</button>
+        <div style="width:1px;height:18px;background:var(--border);margin:0 4px"></div>
+        <button class="sel-type-btn" onclick="selByType('기혼')">+ 기혼</button>
+        <button class="sel-type-btn" onclick="deselByType('기혼')">− 기혼</button>
+        <button class="sel-type-btn" onclick="selByType('미혼')">+ 미혼</button>
+        <button class="sel-type-btn" onclick="selByType('자녀')">+ 자녀</button>
+        <button class="sel-type-btn" onclick="deselByType('자녀')">− 자녀</button>
+        <button class="sel-type-btn" onclick="selByType('반려동물')">+ 반려동물</button>
+        <button class="sel-type-btn" onclick="selByType('긍정형')">+ 긍정형</button>
+        <button class="sel-type-btn" onclick="selByType('브랜드충성형')">+ 브랜드충성</button>
+        <button class="sel-type-btn" onclick="selByType('가성비탐색형')">+ 가성비</button>
+      </div>
+
       <div class="part-grid" id="part-grid"></div>
       <div class="sel-summary">
-        <span class="sel-count" id="sel-count">0명 선택됨</span>
-        <button class="mini-btn" onclick="selAll()">전체 선택</button>
-        <button class="mini-btn" onclick="deselAll()">전체 해제</button>
+        <span class="sel-count" id="sel-count">선택된 참여자 없음</span>
       </div>
     </div>
     <div class="step-label"><span>STEP 2</span> 질문 입력</div>
@@ -1268,39 +1292,86 @@ function renderParts() {
   partsRendered = true;
   const grid = document.getElementById('part-grid');
   grid.innerHTML = '';
-  selectedParts.clear();
+  selectedParts.clear(); // ← 초기 선택 없음
 
   currentPersonas.forEach((p, i) => {
     const name = p.profile_name || p.name || `페르소나${i+1}`;
     const c = document.createElement('div');
-    c.className = 'pcard selected';
+    c.className = 'pcard'; // 초기 선택 안 됨
     c.id = 'pc-'+i; c.dataset.index = i;
-    c.dataset.married = p.married||''; c.dataset.children = p.children||''; c.dataset.pet = p.pet||'';
-    c.innerHTML = `<div class="p-av" style="background:${p.color}1a;border:1.5px solid ${p.color}44">${p.emoji}</div><div><div class="p-nm">${name}</div><div class="p-mt">${p.age||''}<br>${(p.job||'').length>14?(p.job||'').substring(0,14)+'…':(p.job||'')}</div></div><div class="chk">✓</div>`;
+    c.dataset.married    = p.married||'';
+    c.dataset.children   = p.children||'';
+    c.dataset.pet        = p.pet||'';
+    c.dataset.tone       = p.review_tone||'';
+    c.dataset.loyalty    = p.purchase_loyalty||'';
+    const jobShort = (p.job||'').length>14?(p.job||'').substring(0,14)+'…':(p.job||'');
+    const ageLbl = p.age_group || p.age || '';
+    c.innerHTML = `<div class="p-av" style="background:${p.color}1a;border:1.5px solid ${p.color}44">${p.emoji}</div><div><div class="p-nm">${name}</div><div class="p-mt">${ageLbl}<br>${jobShort}</div></div><div class="chk">✓</div>`;
     c.addEventListener('click', () => {
       if (selectedParts.has(i)) { selectedParts.delete(i); c.classList.remove('selected'); }
       else { selectedParts.add(i); c.classList.add('selected'); }
       updateSelCount();
     });
     grid.appendChild(c);
-    selectedParts.add(i);
   });
   updateSelCount();
 }
-function updateSelCount() { document.getElementById('sel-count').textContent = selectedParts.size === 0 ? '선택된 참여자 없음' : `${selectedParts.size}명 선택됨`; }
-function filterPart(type, btn) {
-  document.querySelectorAll('.fchip').forEach(b => b.classList.remove('active')); btn.classList.add('active');
+
+function updateSelCount() {
+  const el = document.getElementById('sel-count');
+  const n = selectedParts.size;
+  const total = currentPersonas.length;
+  el.textContent = n === 0 ? '선택된 참여자 없음' : `${n}명 선택됨 / 전체 ${total}명`;
+  el.style.color = n === 0 ? 'var(--muted)' : 'var(--accent)';
+}
+
+// 보기 필터 — 카드 표시/숨김만 (선택 상태 유지)
+function showFilter(type, btn) {
+  document.querySelectorAll('.fchip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
   document.querySelectorAll('.pcard').forEach(c => {
     let show = true;
-    if (type==='기혼') show = c.dataset.married.includes('기혼');
-    else if (type==='미혼') show = !c.dataset.married.includes('기혼');
-    else if (type==='자녀') show = c.dataset.children && !c.dataset.children.includes('없') && !c.dataset.children.includes('불명');
-    else if (type==='반려동물') show = c.dataset.pet && !c.dataset.pet.includes('없') && !c.dataset.pet.includes('불명');
+    if      (type==='기혼')       show = c.dataset.married.includes('기혼');
+    else if (type==='미혼')       show = !c.dataset.married.includes('기혼');
+    else if (type==='자녀')       show = c.dataset.children.includes('있음');
+    else if (type==='반려동물')   show = c.dataset.pet.includes('있음');
+    else if (type==='긍정형')     show = c.dataset.tone === '긍정형';
+    else if (type==='브랜드충성형') show = c.dataset.loyalty === '브랜드충성형';
+    else if (type==='가성비탐색형') show = c.dataset.loyalty === '가성비탐색형';
     c.classList.toggle('hidden', !show);
   });
 }
-function selAll() { document.querySelectorAll('.pcard:not(.hidden)').forEach(c => { selectedParts.add(parseInt(c.dataset.index)); c.classList.add('selected'); }); updateSelCount(); }
-function deselAll() { document.querySelectorAll('.pcard').forEach(c => { selectedParts.delete(parseInt(c.dataset.index)); c.classList.remove('selected'); }); updateSelCount(); }
+
+// 유형별 선택 추가 (중복 선택 가능 — 현재 보이는 카드 기준)
+function selByType(type) {
+  document.querySelectorAll('.pcard').forEach(c => {
+    let match = false;
+    if      (type==='all')         match = true;
+    else if (type==='기혼')        match = c.dataset.married.includes('기혼');
+    else if (type==='미혼')        match = !c.dataset.married.includes('기혼');
+    else if (type==='자녀')        match = c.dataset.children.includes('있음');
+    else if (type==='반려동물')    match = c.dataset.pet.includes('있음');
+    else if (type==='긍정형')      match = c.dataset.tone === '긍정형';
+    else if (type==='브랜드충성형') match = c.dataset.loyalty === '브랜드충성형';
+    else if (type==='가성비탐색형') match = c.dataset.loyalty === '가성비탐색형';
+    if (match) { selectedParts.add(parseInt(c.dataset.index)); c.classList.add('selected'); }
+  });
+  updateSelCount();
+}
+
+// 유형별 선택 해제
+function deselByType(type) {
+  document.querySelectorAll('.pcard').forEach(c => {
+    let match = false;
+    if      (type==='all')         match = true;
+    else if (type==='기혼')        match = c.dataset.married.includes('기혼');
+    else if (type==='미혼')        match = !c.dataset.married.includes('기혼');
+    else if (type==='자녀')        match = c.dataset.children.includes('있음');
+    else if (type==='반려동물')    match = c.dataset.pet.includes('있음');
+    if (match) { selectedParts.delete(parseInt(c.dataset.index)); c.classList.remove('selected'); }
+  });
+  updateSelCount();
+}
 function setQ(btn) { document.getElementById('focus-q').value = btn.textContent; }
 
 async function runFocus() {
