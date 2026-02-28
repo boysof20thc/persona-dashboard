@@ -528,43 +528,83 @@ async function handleCSVUpload(event) {
   // 2. 기존 페르소나 삭제 후 재삽입
   await sb.from('personas').delete().eq('product_id', productId);
 
-  const personaRows = rows.map(r => ({
-    product_id: productId,
-    product_name: productName,
-    profile_name:   r['프로필_이름'] || r['profile_name'] || '',
-    total_reviews:  parseInt(r['총_리뷰수'] || r['total_reviews'] || 0) || 0,
-    avg_rating:     parseFloat(r['평균_평점'] || r['avg_rating'] || 0) || 0,
-    top_categories: r['구매_카테고리_TOP3'] || r['top_categories'] || '',
-    gender:         r['성별'] || '',
-    age_group:      r['연령대_그룹'] || r['age_group'] || '',
-    age:            r['추정_연령대'] || r['age'] || '',
-    region_style:   r['거주_지역_스타일'] || r['region_style'] || '',
-    job:            r['추정_직업군'] || r['job'] || '',
-    job_memo:       r['직업_메모'] || r['job_memo'] || '',
-    income:         r['소득_수준'] || r['income'] || '',
-    married:        r['결혼_여부'] || r['married'] || '',
-    children:       r['자녀_유무'] || r['children'] || '',
-    pet:            r['반려동물_유무'] || r['pet'] || '',
-    core_values:    r['핵심_가치관'] || r['core_values'] || '',
-    lifestyle:      r['라이프스타일'] || r['lifestyle'] || '',
-    info_channel:   r['주_정보_채널'] || r['info_channel'] || '',
-    device:         r['주_사용_기기'] || r['device'] || '',
-    it_level:       r['IT_숙련도'] || r['it_level'] || '',
-    review_tone:    r['리뷰_성향'] || r['review_tone'] || '',
-    purchase_loyalty: r['구매_충성도'] || r['purchase_loyalty'] || '',
-    review_style:   r['리뷰_작성_스타일'] || r['review_style'] || '',
-    pain_points:    r['Pain_Tags'] || r['Pain_Points'] || r['pain_points'] || '',
-    unmet_needs:    r['Unmet_Tags'] || r['Unmet_Needs'] || r['unmet_needs'] || '',
-    shopping_factor: r['쇼핑_결정_요인'] || r['shopping_factor'] || '',
-    goals:          r['최종_목표'] || r['goals'] || '',
-    identity:       r['나는누구인가'] || r['identity'] || '',
-    aesthetic:      r['추구미'] || r['aesthetic'] || '',
-    review_text:    r['전체_리뷰_통합'] || r['review_text'] || '',
-    purchase_reasons:   r['구매이유'] || r['purchase_reasons'] || '',
-    install_locations:  r['설치장소'] || r['install_locations'] || '',
-    positive_keywords:  r['긍정키워드'] || r['positive_keywords'] || '',
-    negative_keywords:  r['부정키워드'] || r['negative_keywords'] || '',
-  }));
+  const personaRows = rows.map(r => {
+    // ── D1 생애주기 → children (있음/없음 정규화)
+    const lifecycle = r['D1_생애주기'] || r['자녀_유무'] || '';
+    const childrenVal = (lifecycle && !['미상','판별불가','해당없음','없음','미혼'].some(x => lifecycle.includes(x)))
+      ? '있음' : lifecycle.includes('없음') ? '없음' : lifecycle || r['children'] || '';
+
+    // ── D9 연령대추정 → age_group 정규화 (첫 번째 값 사용)
+    const ageRaw = r['D9_연령대추정'] || r['연령대_그룹'] || r['age_group'] || '';
+    const ageFirst = ageRaw.split(',')[0].trim();
+    const ageGroupNorm = {
+      '2030영유아부모신혼':'30대', '4050학부모기성세대':'40대이상',
+      '2030신혼':'30대', '2030':'30대', '4050':'40대이상',
+      '20대':'20대', '30대초반':'30대초반', '30대중반':'30대중반',
+      '30대후반':'30대후반', '40대초반':'40대초반', '40대중반':'40대중반',
+      '40대후반':'40대후반', '50대이상':'50대이상'
+    };
+    const ageGroup = ageGroupNorm[ageFirst] || r['연령대_그룹'] || r['age_group'] || ageFirst;
+
+    // ── D2 반려동물 → pet 정규화
+    const petRaw = r['D2_반려동물'] || r['반려동물_유무'] || '';
+    const petVal = petRaw.includes('없음') ? '없음'
+      : (petRaw && !['미상','판별불가'].some(x => petRaw.includes(x))) ? '있음' : petRaw || r['pet'] || '';
+
+    // ── D8 지불의향 → income 대체
+    const incomeVal = r['소득_수준'] || r['income'] || (r['D8_지불의향'] || '').split(',')[0].trim() || '';
+
+    // ── D5 소비가치관 → purchase_loyalty 대체
+    const loyaltyVal = r['구매_충성도'] || r['purchase_loyalty'] || (r['D5_소비가치관'] || '').split(',')[0].trim() || '';
+
+    return {
+      product_id: productId,
+      product_name: productName,
+      // 기본 정보
+      profile_name:    r['프로필_이름'] || r['profile_name'] || '',
+      total_reviews:   parseInt(r['총_리뷰수'] || r['total_reviews'] || 0) || 0,
+      avg_rating:      parseFloat(r['평균_평점'] || r['avg_rating'] || 0) || 0,
+      review_avg_len:  parseInt(r['리뷰_평균길이'] || 0) || 0,
+      top_categories:  r['구매_카테고리_TOP3'] || r['top_categories'] || '',
+      // 인구통계 (D1~D2 우선, v8 컬럼 fallback)
+      gender:          r['성별'] || '',
+      age_group:       ageGroup,
+      age:             ageRaw,
+      married:         r['D1_결혼여부'] || r['결혼_여부'] || r['married'] || '',
+      children:        childrenVal,
+      children_detail: lifecycle,
+      pet:             petVal,
+      pet_detail:      petRaw,
+      // 소비/라이프스타일 (D3~D8)
+      income:          incomeVal,
+      payment_type:    r['D8_지불의향'] || '',
+      consume_value:   r['D5_소비가치관'] || '',
+      health_diet:     r['D3_건강식이'] || '',
+      housing:         r['D4_주거환경'] || '',
+      // 직업/채널 (D6 우선)
+      job:             r['D6_직업패턴'] || r['추정_직업군'] || r['job'] || '',
+      job_memo:        r['D6_직업_메모'] || r['직업_메모'] || r['job_memo'] || '',
+      info_channel:    r['주_정보_채널'] || r['info_channel'] || '',
+      device:          r['주_사용_기기'] || r['device'] || '',
+      it_level:        r['IT_숙련도'] || r['it_level'] || '',
+      // 리뷰 행동 (D7 우선)
+      review_tone:     r['리뷰_성향'] || r['review_tone'] || '',
+      purchase_loyalty: loyaltyVal,
+      review_style:    r['D7_리뷰스타일'] || r['리뷰_작성_스타일'] || r['review_style'] || '',
+      age_confidence:  r['D9_신뢰도'] || '',
+      // 태그형
+      pain_points:     r['Pain_Tags'] || r['Pain_Points'] || r['pain_points'] || '',
+      unmet_needs:     r['Unmet_Tags'] || r['Unmet_Needs'] || r['unmet_needs'] || '',
+      shopping_factor: r['쇼핑_결정_요인'] || r['shopping_factor'] || '',
+      // 자유텍스트
+      core_values:     r['핵심_가치관'] || r['core_values'] || '',
+      lifestyle:       r['라이프스타일'] || r['lifestyle'] || '',
+      goals:           r['최종_목표'] || r['goals'] || '',
+      identity:        r['나는누구인가'] || r['identity'] || '',
+      aesthetic:       r['추구미'] || r['aesthetic'] || '',
+      review_text:     r['전체_리뷰_통합'] || r['review_text'] || '',
+    };
+  });
 
   const { error: pErr } = await sb.from('personas').insert(personaRows);
   if (pErr) { showToast('페르소나 저장 실패: ' + pErr.message, 'error'); return; }
@@ -668,9 +708,9 @@ function renderOverview() {
   const topDevice = deviceEntries[0]?.[0] || '-';
 
   // ── 직업/IT
-  const jobMap     = countMap(ps, p=>(p.job||'').trim());
+  const jobMap    = countMap(ps, p=>(p.job||'').trim());
   const jobEntries = topN(jobMap,5);
-  const itMap      = countMap(ps, p=>(p.it_level||'').trim());
+  const itMap     = countMap(ps, p=>(p.it_level||'').trim());
 
   // ── v8 신규
   const reviewToneMap  = countMap(ps, p=>(p.review_tone||'').trim());
@@ -681,50 +721,88 @@ function renderOverview() {
   const topStyle   = topN(reviewStyleMap,1)[0]?.[0] || '-';
 
   // ── 태그형 복수값
-  const channelMap = {};
-  ps.forEach(p=>(p.info_channel||'').split(/[,，]+/).forEach(c=>{const k=c.trim();if(k.length>1)channelMap[k]=(channelMap[k]||0)+1;}));
+  const channelMap = {}; ps.forEach(p=>(p.info_channel||'').split(/[,，]+/).forEach(c=>{const k=c.trim();if(k.length>1)channelMap[k]=(channelMap[k]||0)+1;}));
   const channelEntries = topN(channelMap,5);
   const topChannel = channelEntries[0]?.[0] || '-';
 
-  const shopMap = {};
-  ps.forEach(p=>(p.shopping_factor||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)shopMap[k]=(shopMap[k]||0)+1;}));
+  const shopMap = {}; ps.forEach(p=>(p.shopping_factor||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)shopMap[k]=(shopMap[k]||0)+1;}));
   const shopEntries = topN(shopMap,5);
 
-  const painMap = {};
-  ps.forEach(p=>(p.pain_points||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)painMap[k]=(painMap[k]||0)+1;}));
+  const painMap = {}; ps.forEach(p=>(p.pain_points||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)painMap[k]=(painMap[k]||0)+1;}));
   const topPains = topN(painMap,5);
 
-  const unmetMap = {};
-  ps.forEach(p=>(p.unmet_needs||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)unmetMap[k]=(unmetMap[k]||0)+1;}));
+  const unmetMap = {}; ps.forEach(p=>(p.unmet_needs||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)unmetMap[k]=(unmetMap[k]||0)+1;}));
   const topUnmet = topN(unmetMap,5);
 
-  // ── 핵심 고객 프로필 태그
+  // ── D1 생애주기 상세 (children_detail 기반)
+  const lifecycleMap = {}; ps.forEach(p=>(p.children_detail||p.children||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&!['미상','판별불가','해당없음','있음','없음'].includes(k))lifecycleMap[k]=(lifecycleMap[k]||0)+1;}));
+  const lifecycleEntries = topN(lifecycleMap,5);
+
+  // ── D3 건강식이
+  const healthMap = {}; ps.forEach(p=>(p.health_diet||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&k!=='해당없음')healthMap[k]=(healthMap[k]||0)+1;}));
+  const healthEntries = topN(healthMap,6);
+
+  // ── D5 소비가치관
+  const consumeMap = {}; ps.forEach(p=>(p.consume_value||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k)consumeMap[k]=(consumeMap[k]||0)+1;}));
+  const consumeEntries = topN(consumeMap,5);
+
+  // ── D4 주거환경
+  const housingMap = {}; ps.forEach(p=>{const h=(p.housing||'').split('/')[0].trim().substring(0,10);if(h&&!h.includes('판별불가'))housingMap[h]=(housingMap[h]||0)+1;});
+  const housingEntries = topN(housingMap,5);
+
+  // ── D8 지불의향
+  const paymentMap = {}; ps.forEach(p=>(p.payment_type||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&k!=='판별불가')paymentMap[k]=(paymentMap[k]||0)+1;}));
+  const paymentEntries = topN(paymentMap,5);
+
+  // ── D2 반려동물 상세
+  const petDetailMap = {}; ps.forEach(p=>(p.pet_detail||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&k!=='없음'&&k!=='미상')petDetailMap[k]=(petDetailMap[k]||0)+1;}));
+  const petDetailEntries = topN(petDetailMap,4);
+
+  // ── 핵심 고객 프로필 태그 (D1~D9 기반)
+  const topJob = topN(jobMap,1)[0]?.[0] || '';
+  const topPayment = paymentEntries[0]?.[0] || topIncome;
+  const topLifecycle = lifecycleEntries[0]?.[0] || (childrenYes>total*0.5?'자녀 있음':'자녀 없음');
   const profileTags = [
-    topGender?.[0]||'', topAge,
-    childrenYes>total*0.5?'자녀 있음':'자녀 없음',
-    topIncome+' 소득', topDevice+' 사용자',
-    topN(jobMap,1)[0]?.[0]||''
+    topAge, topN(genderMap,1)[0]?.[0]||'',
+    topLifecycle, topJob, topPayment,
+    petYes>total*0.3?'반려동물 보유':''
   ].filter(Boolean);
 
-  // ── 섹션 구분선 헬퍼
+  // 섹션 구분선 헬퍼
   const divider = (color,icon,label,sub) => `
-    <div style="display:flex;align-items:center;gap:10px;margin:28px 0 14px;padding:10px 16px;background:${color}15;border:1px solid ${color}30;border-radius:10px">
-      <span style="font-size:1.2rem">${icon}</span>
+    <div style="display:flex;align-items:center;gap:10px;margin:28px 0 14px;padding:10px 16px;background:${color}08;border:1px solid ${color}20;border-radius:10px">
+      <span style="font-size:1.1rem">${icon}</span>
       <div>
-        <div style="font-size:.8rem;font-weight:700;color:${color}">${label}</div>
-        <div style="font-size:.68rem;color:var(--muted);margin-top:1px">${sub}</div>
+        <div style="font-size:.78rem;font-weight:700;color:${color}">${label}</div>
+        <div style="font-size:.68rem;color:var(--muted)">${sub}</div>
       </div>
     </div>`;
 
-  // ── 가로 비율 바 헬퍼
-  const ratioBars = (items) => items.filter(i=>i[1]>0).map(([label,val,color])=>`
+  // 도넛 SVG 헬퍼 (2-segment)
+  const donut2 = (v1,v2,c1,c2,label,sub) => {
+    const r=40, circ=2*Math.PI*r;
+    const d1=circ*(v1/100), d2=circ*(v2/100);
+    return `<div style="display:flex;align-items:center;gap:16px">
+      <svg width="88" height="88" viewBox="0 0 110 110" style="flex-shrink:0">
+        <circle cx="55" cy="55" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="16"/>
+        <circle cx="55" cy="55" r="${r}" fill="none" stroke="${c1}" stroke-width="16" stroke-dasharray="${d1} ${circ}" stroke-dashoffset="0" transform="rotate(-90 55 55)"/>
+        <circle cx="55" cy="55" r="${r}" fill="none" stroke="${c2}" stroke-width="16" stroke-dasharray="${d2} ${circ}" stroke-dashoffset="${-d1}" transform="rotate(-90 55 55)"/>
+        <text x="55" y="51" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">${v1}%</text>
+        <text x="55" y="65" text-anchor="middle" fill="var(--muted)" font-size="9">${label}</text>
+      </svg>
+      <div>${sub}</div>
+    </div>`;
+  };
+
+  // 가로 비율 바 헬퍼
+  const ratioBars = (items) => items.map(([label,val,color])=>`
     <div style="margin-bottom:9px">
       <div style="display:flex;justify-content:space-between;margin-bottom:3px">
         <span style="font-size:.76rem">${label}</span>
         <span style="font-size:.74rem;color:${color||'var(--accent)'};font-weight:700">${val}%</span>
       </div>
       <div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
-        <div class="bar-fill-anim" style="height:100%;width:${val}%;background:${color||'var(--accent)'};border-radius:3px"></div>
+        <div style="height:100%;width:${val}%;background:${color||'var(--accent)'};border-radius:3px;transition:width 1.2s ease"></div>
       </div>
     </div>`).join('');
 
@@ -733,60 +811,80 @@ function renderOverview() {
     <!-- ═══ 핵심 고객 프로필 배너 ═══ -->
     <div style="background:linear-gradient(135deg,rgba(200,255,0,.06),rgba(107,197,255,.06));border:1px solid rgba(200,255,0,.2);border-radius:16px;padding:22px 26px;margin-bottom:8px;position:relative;overflow:hidden">
       <div style="position:absolute;top:0;right:0;width:200px;height:100%;background:radial-gradient(ellipse at right,rgba(200,255,0,.05),transparent 70%);pointer-events:none"></div>
-      <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:2px;color:var(--accent);margin-bottom:10px;font-weight:700">🎯 핵심 고객 프로필 — 데이터 자동 합성</div>
+      <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:2px;color:var(--accent);margin-bottom:10px;font-weight:700">🎯 핵심 고객 프로필 — D1~D9 자동 합성</div>
       <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px">
         ${profileTags.map((tag,i)=>{
           const cs=[['rgba(200,255,0,.1)','rgba(200,255,0,.3)','var(--accent)'],['rgba(107,197,255,.1)','rgba(107,197,255,.3)','var(--accent3)'],['rgba(176,107,255,.1)','rgba(176,107,255,.3)','var(--purple)'],['rgba(255,176,107,.1)','rgba(255,176,107,.3)','var(--orange)'],['rgba(255,107,107,.1)','rgba(255,107,107,.3)','var(--accent2)'],['rgba(200,255,0,.1)','rgba(200,255,0,.3)','var(--accent)']];
           return `<span style="background:${cs[i%cs.length][0]};border:1px solid ${cs[i%cs.length][1]};border-radius:20px;padding:4px 13px;font-size:.8rem;color:${cs[i%cs.length][2]};font-weight:600">${tag}</span>`;
         }).join('')}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">
         ${[
           {lbl:'총 페르소나',val:total+'명',c:'var(--accent)'},
-          {lbl:'평균 리뷰',val:avgReviews+'개',c:'var(--accent3)'},
+          {lbl:'평균 리뷰수',val:avgReviews+'개',c:'var(--accent3)'},
           {lbl:'평균 평점',val:avgRating+'점',c:'var(--orange)'},
-          {lbl:'기혼 비중',val:pct(married)+'%',c:'var(--purple)'},
-          {lbl:'자녀 보유',val:pct(childrenYes)+'%',c:'var(--accent2)'},
+          {lbl:'기혼 (D1)',val:pct(married)+'%',c:'var(--purple)'},
+          {lbl:'자녀 보유 (D1)',val:pct(childrenYes)+'%',c:'var(--accent2)'},
+          {lbl:'반려동물 (D2)',val:pct(petYes)+'%',c:'#22c55e'},
         ].map(s=>`<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:10px 14px">
           <div style="font-size:.6rem;color:var(--muted);margin-bottom:3px">${s.lbl}</div>
-          <div style="font-size:1.25rem;font-weight:900;color:${s.c}">${s.val}</div>
+          <div style="font-size:1.2rem;font-weight:900;color:${s.c}">${s.val}</div>
         </div>`).join('')}
       </div>
     </div>
 
     <!-- ═══ 🟢 1단계 직접추출 ═══ -->
-    ${divider('#22c55e','🟢','1단계 — 직접 추출','텍스트에서 명시적으로 확인된 사실 · 신뢰도 높음')}
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+    ${divider('#22c55e','🟢','1단계 — 직접 추출 (D1·D2·Pain)','리뷰 텍스트에서 명시적으로 확인된 사실 · 신뢰도 높음')}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px">
 
-      <!-- 생애주기 -->
+      <!-- D1 생애주기 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:14px;font-weight:700">👶 생애주기 · 자녀 현황</div>
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:4px;font-weight:700">D1 · 생애주기</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">결혼여부 · 자녀현황</div>
         ${ratioBars([
           ['자녀 있음',pct(childrenYes),'#22c55e'],
           ['기혼·무자녀',pct(marriedNoChild),'var(--accent3)'],
           ['미혼/불명',pct(single),'var(--muted)'],
         ])}
+        ${lifecycleEntries.length ? `
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">생애주기 유형</div>
+        ${ratioBars(lifecycleEntries.slice(0,3).map(([k,v])=>[k,pct(v),'#22c55e']))}` : ''}
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
           ${childrenYes>total*0.6?'육아 가구 과반 — 자녀 안전·위생 소구 핵심':childrenYes>total*0.4?'육아 가구 비중 높음 — 패밀리 마케팅 유효':'미혼/무자녀 비중 높음 — 개인 라이프스타일 소구'}
         </div>
       </div>
 
-      <!-- 반려동물 -->
+      <!-- D2 반려동물 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:14px;font-weight:700">🐾 반려동물 보유 현황</div>
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:4px;font-weight:700">D2 · 반려동물</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">보유 현황 · 종류</div>
         ${ratioBars([
           ['있음',pct(petYes),'#22c55e'],
           ['없음',pct(petNone),'var(--muted)'],
           ['추정불가',pct(petUnknown),'var(--border)'],
         ])}
+        ${petDetailEntries.length ? `
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">반려동물 종류</div>
+        ${ratioBars(petDetailEntries.map(([k,v])=>[k,pct(v),'#22c55e']))}` : ''}
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
-          ${petYes>total*0.3?'반려동물 보유 '+pct(petYes)+'% — 펫 케어 번들 크로스셀 기회':petYes>total*0.15?'반려동물 보유 '+pct(petYes)+'% — 틈새 타겟 가능':'반려동물 보유 낮음 — 펫 마케팅 우선순위 낮음'}
+          ${petYes>total*0.3?'반려동물 보유 '+pct(petYes)+'% — 펫 케어 크로스셀 기회':petYes>total*0.15?'반려동물 보유 '+pct(petYes)+'% — 틈새 타겟 가능':'반려동물 보유 낮음 — 관련 마케팅 우선순위 낮음'}
+        </div>
+      </div>
+
+      <!-- D3 건강식이 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:4px;font-weight:700">D3 · 건강식이</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">건강·식이 패턴</div>
+        ${healthEntries.length ? ratioBars(healthEntries.map(([k,v])=>[k,pct(v),'#22c55e'])) : '<div style="font-size:.75rem;color:var(--muted)">데이터 없음</div>'}
+        <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
+          ${healthEntries[0]?'<strong>'+healthEntries[0][0]+'</strong> 1위 — 건강·성분 소구 콘텐츠 유효':'건강 관련 데이터 없음'}
         </div>
       </div>
 
       <!-- Pain Tags -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:14px;font-weight:700">😣 Pain Tags · 빈도순</div>
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:4px;font-weight:700">Pain Tags</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">핵심 불편·고통 포인트</div>
         ${topPains.map(([k,v],i)=>`
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
             <div style="display:flex;align-items:center;gap:6px">
@@ -799,75 +897,88 @@ function renderOverview() {
     </div>
 
     <!-- ═══ 🟡 2단계 높은추론 ═══ -->
-    ${divider('#fbbf24','🟡','2단계 — 높은 추론','구매 패턴·데이터 교차 분석으로 도출 · 신뢰도 중-상')}
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+    ${divider('#fbbf24','🟡','2단계 — 높은 추론 (D4·D5·D8)','구매 패턴·데이터 교차 분석으로 도출 · 신뢰도 중-상')}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px">
 
-      <!-- 성별/연령 -->
+      <!-- D9 연령대 + 결혼여부 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:14px;font-weight:700">👤 성별 & 연령대</div>
-        <div style="margin-bottom:14px">
-          ${ratioBars(topN(genderMap,3).map(([k,v])=>[k,pct(v),k==='여성'?'var(--accent2)':'var(--accent3)']))}
-        </div>
-        <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">연령대 분포</div>
-        ${ratioBars(ageEntries.slice(0,5).map(([k,v])=>[k,pct(v),'#fbbf24']))}
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:4px;font-weight:700">D9 · 연령대 추정</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">& 결혼여부 (D1)</div>
+        ${ratioBars(ageEntries.slice(0,4).map(([k,v])=>[k,pct(v),'#fbbf24']))}
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">결혼여부</div>
+        ${ratioBars(topN(countMap(ps,p=>(p.married||'').trim()),3).map(([k,v])=>[k,pct(v),'var(--purple)']))}
       </div>
 
-      <!-- 정보 채널 -->
+      <!-- D5 소비가치관 + 쇼핑결정요인 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:14px;font-weight:700">📡 주요 정보 채널</div>
-        ${ratioBars(channelEntries.map(([k,v])=>[k,pct(v),'#fbbf24']))}
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:4px;font-weight:700">D5 · 소비 가치관</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">& 쇼핑 결정 요인</div>
+        ${ratioBars(consumeEntries.map(([k,v])=>[k,pct(v),'#fbbf24']))}
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">쇼핑 결정 요인</div>
+        ${ratioBars(shopEntries.slice(0,4).map(([k,v])=>[k,pct(v),'var(--orange)']))}
+      </div>
+
+      <!-- D8 지불의향 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:4px;font-weight:700">D8 · 지불 의향</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">구매 소비 패턴 유형</div>
+        ${paymentEntries.length ? ratioBars(paymentEntries.map(([k,v])=>[k,pct(v),'#fbbf24'])) : '<div style="font-size:.75rem;color:var(--muted)">데이터 없음</div>'}
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(251,191,36,.05);border-radius:6px;line-height:1.6">
-          <strong style="color:#fbbf24">${topChannel}</strong> 채널 1위 — 해당 채널 콘텐츠·광고 우선 배치 권장
+          ${paymentEntries[0]?'<strong>'+paymentEntries[0][0]+'</strong> 유형 1위':''}
         </div>
       </div>
 
-      <!-- 소득 + 쇼핑 결정요인 -->
+      <!-- D4 주거환경 + Unmet Needs -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:14px;font-weight:700">💰 소득 수준 & 쇼핑 결정 요인</div>
-        <div style="margin-bottom:14px">
-          ${ratioBars(incomeEntries.map(([k,v])=>[k,pct(v),'var(--purple)']))}
-        </div>
-        <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">쇼핑 결정 요인</div>
-        ${ratioBars(shopEntries.slice(0,4).map(([k,v])=>[k,pct(v),'#fbbf24']))}
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:4px;font-weight:700">D4 · 주거환경</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">& Unmet Needs</div>
+        ${housingEntries.length ? ratioBars(housingEntries.map(([k,v])=>[k,pct(v),'#fbbf24'])) : '<div style="font-size:.75rem;color:var(--muted);margin-bottom:10px">판별불가 비중 높음</div>'}
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">Unmet Needs</div>
+        ${topUnmet.slice(0,4).map(([k,v],i)=>`
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:.76rem">${k}</span>
+            <span style="font-size:.68rem;background:rgba(176,107,255,.12);border:1px solid rgba(176,107,255,.2);border-radius:8px;padding:1px 7px;color:var(--purple);font-weight:700;flex-shrink:0">${v}명</span>
+          </div>`).join('')}
       </div>
     </div>
 
     <!-- ═══ 🟠 3단계 중간추론 ═══ -->
-    ${divider('#f97316','🟠','3단계 — 중간 추론','AI 패턴 분석 기반 · 참고용으로 활용 권장')}
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+    ${divider('#f97316','🟠','3단계 — 중간 추론 (D6·D7)','AI 패턴 분석 기반 · 참고용으로 활용 권장')}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px">
 
-      <!-- 직업군 -->
+      <!-- D6 직업패턴 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:14px;font-weight:700">💼 추정 직업군</div>
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:4px;font-weight:700">D6 · 직업 패턴</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">AI 추론 · 낮은 신뢰도</div>
         ${ratioBars(jobEntries.map(([k,v])=>[k,pct(v),'#f97316']))}
-      </div>
-
-      <!-- 리뷰 성향 + 스타일 -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:14px;font-weight:700">✍️ 리뷰 성향 & 작성 스타일</div>
-        <div style="margin-bottom:14px">
-          ${ratioBars(topN(reviewToneMap,4).map(([k,v])=>[k,pct(v),'#f97316']))}
-        </div>
-        <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">작성 스타일</div>
-        ${ratioBars(topN(reviewStyleMap,3).map(([k,v])=>[k,pct(v),'var(--purple)']))}
-      </div>
-
-      <!-- 구매 충성도 + 기기 -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:18px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:14px;font-weight:700">🔄 구매 충성도 & 사용 기기</div>
-        <div style="margin-bottom:14px">
-          ${ratioBars(topN(loyaltyMap,3).map(([k,v])=>[k,pct(v),'#f97316']))}
-        </div>
-        <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">주 사용 기기</div>
-        ${ratioBars(deviceEntries.map(([k,v])=>[k,pct(v),'var(--accent3)']))}
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(249,115,22,.05);border-radius:6px;line-height:1.6">
-          ${topLoyalty==='브랜드충성형'?'브랜드 충성 — 리텐션·멤버십 전략 유효':topLoyalty==='가성비탐색형'?'가성비 탐색형 — 할인·프로모션에 민감':'다양성 추구 — 신제품 체험 마케팅 유효'}
+          추정불가 비중이 높을 경우 정성 리서치 병행 권장
+        </div>
+      </div>
+
+      <!-- D7 리뷰스타일 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:4px;font-weight:700">D7 · 리뷰 스타일</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">콘텐츠 전략 참고</div>
+        ${ratioBars(topN(reviewStyleMap,4).map(([k,v])=>[k,pct(v),'#f97316']))}
+        <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(249,115,22,.05);border-radius:6px;line-height:1.6">
+          ${topStyle==='포토상세형'?'포토 상세형 다수 — 이미지 리뷰 콘텐츠 캠페인 적합':topStyle==='핵심요약형'?'핵심 요약형 — 짧고 명확한 메시지 소구 유효':topStyle==='감성소통형'?'감성 소통형 — 브랜드 스토리텔링·공감 마케팅 유효':'단순 별점형 다수 — 리뷰 인센티브로 품질 개선 필요'}
+        </div>
+      </div>
+
+      <!-- 정보채널 + 소비가치관 종합 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:4px;font-weight:700">정보 채널</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">주요 접점 채널</div>
+        ${channelEntries.length ? ratioBars(channelEntries.map(([k,v])=>[k,pct(v),'#f97316'])) : '<div style="font-size:.75rem;color:var(--muted)">데이터 없음</div>'}
+        <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(249,115,22,.05);border-radius:6px;line-height:1.6">
+          ${topChannel!=='-'?topChannel+' 1위 — 해당 채널 광고·콘텐츠 우선 배치':'채널 데이터 없음 — 쇼핑결정요인 기반 소구 권장'}
         </div>
       </div>
     </div>
 
     <!-- ═══ 🔴 4단계 참고용 ═══ -->
-    ${divider('#ef4444','🔴','4단계 — 참고용','추론 불확실성 높음 · 정성 리서치로 검증 후 활용')}
+    ${divider('#ef4444','🔴','4단계 — 참고용 (D9 추정)','추론 불확실성 높음 · 정성 리서치 검증 후 활용')}
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
 
       <!-- Primary 페르소나 카드 -->
@@ -878,11 +989,11 @@ function renderOverview() {
           <span style="font-size:1.8rem;font-weight:900;color:var(--accent)">${pct(childrenYes)}%</span>
         </div>
         <div style="font-size:.95rem;font-weight:700;color:#fff;margin-bottom:8px">
-          ${childrenYes>total*0.5?'육아 가구 핵심 구매자':married>total*0.7?'기혼 가구 메인 구매자':'주도 페르소나'}
+          ${lifecycleEntries[0]?lifecycleEntries[0][0]+' 구매자':childrenYes>total*0.5?'육아 가구 핵심 구매자':'주도 페르소나'}
         </div>
         <div style="font-size:.76rem;color:var(--muted);line-height:1.8;margin-bottom:12px">
-          ${topAge} ${topGender?.[0]||''} · ${topIncome} 소득<br>
-          ${topN(jobMap,1)[0]?.[0]||'직장인'} · ${topChannel} 채널
+          ${topAge} · ${topN(jobMap,1)[0]?.[0]||'직장인'}<br>
+          ${paymentEntries[0]?.[0]||''} · ${consumeEntries[0]?.[0]||''} 중시
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:4px">
           ${topPains.slice(0,3).map(([k])=>`<span style="background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.18);border-radius:4px;padding:2px 7px;font-size:.66rem;color:var(--accent2)">${k}</span>`).join('')}
@@ -897,30 +1008,26 @@ function renderOverview() {
           <span style="font-size:1.8rem;font-weight:900;color:var(--accent3)">${pct(single+marriedNoChild)}%</span>
         </div>
         <div style="font-size:.95rem;font-weight:700;color:#fff;margin-bottom:8px">
-          ${single>total*0.3?'미혼·1인 가구 구매자':marriedNoChild>total*0.2?'기혼·무자녀 부부 구매자':'보조 페르소나'}
+          ${lifecycleEntries[1]?lifecycleEntries[1][0]+' 구매자':single>total*0.3?'미혼·1인 가구 구매자':'보조 페르소나'}
         </div>
         <div style="font-size:.76rem;color:var(--muted);line-height:1.8;margin-bottom:12px">
           ${ageEntries[1]?.[0]||topAge} · ${topStyle} 리뷰어<br>
-          ${topLoyalty} · ${topDevice} 사용자
+          ${petYes>total*0.2?'반려동물 보유 · ':''} ${paymentEntries[1]?.[0]||consumeEntries[1]?.[0]||''}
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:4px">
           ${topUnmet.slice(0,3).map(([k])=>`<span style="background:rgba(176,107,255,.08);border:1px solid rgba(176,107,255,.18);border-radius:4px;padding:2px 7px;font-size:.66rem;color:var(--purple)">${k}</span>`).join('')}
         </div>
       </div>
 
-      <!-- Unmet Needs + 주의사항 -->
+      <!-- D9 신뢰도 + 주의사항 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:3px solid #ef4444;border-radius:12px;padding:20px">
-        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#ef4444;margin-bottom:14px;font-weight:700">💭 Unmet Needs · 빈도순</div>
-        ${topUnmet.map(([k,v],i)=>`
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:.65rem;color:var(--muted);width:16px">#${i+1}</span>
-              <span style="font-size:.79rem">${k}</span>
-            </div>
-            <span style="font-size:.68rem;background:rgba(176,107,255,.12);border:1px solid rgba(176,107,255,.2);border-radius:8px;padding:2px 8px;color:var(--purple);font-weight:700;flex-shrink:0">${v}명</span>
-          </div>`).join('')}
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#ef4444;margin-bottom:4px;font-weight:700">D9 · 연령대 추정 신뢰도</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">추정 정확도 분포</div>
+        ${ratioBars(topN(countMap(ps,p=>(p.age_confidence||'').trim()),3).filter(([k])=>k).map(([k,v])=>[k,pct(v),'#ef4444']))}
+        <div style="margin-top:14px;font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">연령대 원본 값</div>
+        ${ratioBars(topN(countMap(ps,p=>(p.age||'').split(',')[0].trim()),4).filter(([k])=>k&&k!=='추정불가').map(([k,v])=>[k,pct(v),'var(--muted)']))}
         <div style="margin-top:14px;padding:9px 11px;background:rgba(239,68,68,.05);border:1px dashed rgba(239,68,68,.25);border-radius:7px;font-size:.71rem;color:#ef4444;line-height:1.6">
-          ⚠️ 4단계 항목은 추론 불확실성이 높습니다.<br>정성 리서치로 검증 후 전략에 활용하세요.
+          ⚠️ 연령대 추정은 간접 근거 기반입니다.<br>정성 리서치로 검증 후 전략에 활용하세요.
         </div>
       </div>
     </div>
