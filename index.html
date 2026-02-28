@@ -889,181 +889,251 @@ function renderOverview() {
 }
 // ═══════════════════════ REVIEW ═══════════════════════
 function renderReview() {
-  const tab = document.getElementById('tab-review');
-  const ins = currentInsight;
+  const tab  = document.getElementById('tab-review');
+  const ins  = currentInsight;
   const prod = allProducts.find(p => p.id === currentProductId);
+  if (!prod) return;
 
-  if (!ins) {
-    // 분석 전 — AI 분석 버튼 표시
-    tab.innerHTML = `
-      <div class="ri-header">
-        <div class="ri-prod-badge">📦 ${prod?.name||'제품'}</div>
-        <div class="ri-meta">${currentPersonas.length}명 페르소나 · 리뷰 분석 대기 중</div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:32px;text-align:center;max-width:560px;margin:40px auto;">
-        <div style="font-size:2.5rem;margin-bottom:16px">🤖</div>
-        <div style="font-size:1.05rem;font-weight:700;color:#fff;margin-bottom:10px">AI 리뷰 인사이트 자동 분석</div>
-        <div style="font-size:.84rem;color:var(--muted);line-height:1.7;margin-bottom:8px">
-          페르소나들의 리뷰 텍스트에서<br>
-          <strong style="color:var(--accent)">"${prod?.name||'현재 제품'}"</strong> 관련 내용만 자동으로 추출해<br>
-          구매이유 · 설치장소 · 긍정/부정 키워드 · 종합 인사이트를 생성합니다.
-        </div>
-        <div style="font-size:.76rem;color:var(--muted);margin-bottom:22px;padding:8px 14px;background:var(--surface2);border-radius:7px;display:inline-block">
-          ⏱ 분석 소요시간: 약 30~60초 · 결과는 DB에 저장되어 다음부터 즉시 표시
-        </div>
-        <br>
-        <button onclick="runReviewAnalysis()" id="ai-analyze-btn" style="background:var(--accent);color:#000;border:none;border-radius:9px;padding:13px 36px;font-family:'Noto Sans KR',sans-serif;font-size:.95rem;font-weight:700;cursor:pointer;transition:opacity .2s">
-          🔍 AI 분석 시작하기
-        </button>
-      </div>
-      <div id="analyze-log" style="max-width:560px;margin:0 auto;"></div>`;
-    return;
-  }
+  // 캐시된 분석 결과 있으면 바로 표시
+  if (ins) { renderReviewData(ins, prod); return; }
 
-  renderReviewData(ins, prod);
+  // 분석 전 화면 — CSV 업로드 + AI 분석 버튼
+  tab.innerHTML = `
+    <div class="ri-header">
+      <div class="ri-prod-badge">📦 ${prod.name}</div>
+      <div class="ri-meta">${currentPersonas.length}명 페르소나 · 리뷰 분석 대기 중</div>
+    </div>
+
+    <!-- 리뷰 CSV 업로드 -->
+    <div style="max-width:600px;margin:32px auto 0">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;margin-bottom:16px">
+        <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px;font-weight:700">STEP 1 · 리뷰 데이터 업로드</div>
+        <div style="font-size:.83rem;color:var(--muted);margin-bottom:16px;line-height:1.7">
+          크롤러로 추출한 <strong style="color:#fff">${prod.name}</strong> 전용 리뷰 CSV를 업로드하세요.<br>
+          <span style="font-size:.75rem">필요 컬럼: 리뷰어명, 평점, 리뷰텍스트, 리뷰날짜</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <label style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-size:.82rem;color:var(--muted);cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:7px" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+            📂 리뷰 CSV 선택
+            <input type="file" accept=".csv" style="display:none" onchange="handleReviewCSV(event)">
+          </label>
+          <span id="rv-csv-status" style="font-size:.78rem;color:var(--muted)">파일 선택 안됨</span>
+        </div>
+        <div id="rv-csv-preview" style="margin-top:14px"></div>
+      </div>
+
+      <!-- AI 분석 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;text-align:center">
+        <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px;font-weight:700">STEP 2 · AI 분석 실행</div>
+        <div style="font-size:.83rem;color:var(--muted);line-height:1.7;margin-bottom:8px">
+          분석 결과는 DB에 저장되어 <strong style="color:#fff">다음 접속자는 즉시 확인</strong> 가능합니다.
+        </div>
+        <div style="font-size:.74rem;color:var(--muted);margin-bottom:20px;padding:7px 14px;background:var(--surface2);border-radius:7px;display:inline-block">
+          ⏱ 분석 소요시간: 약 1~3분
+        </div><br>
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">
+          <button onclick="runReviewAnalysis()" id="ai-analyze-btn" style="background:var(--accent);color:#000;border:none;border-radius:9px;padding:13px 32px;font-family:'Noto Sans KR',sans-serif;font-size:.92rem;font-weight:700;cursor:pointer;transition:opacity .2s">
+            🔍 AI 분석 시작하기
+          </button>
+          <button onclick="stopReviewAnalysis()" id="ai-stop-btn" style="display:none;background:var(--surface2);color:var(--accent2);border:1px solid var(--accent2);border-radius:9px;padding:13px 22px;font-family:'Noto Sans KR',sans-serif;font-size:.85rem;font-weight:700;cursor:pointer">
+            ⏹ 분석 중지
+          </button>
+        </div>
+      </div>
+      <div id="analyze-log" style="margin-top:12px"></div>
+    </div>`;
+}
+
+// 리뷰 CSV 업로드 처리
+let reviewRawData = [];
+async function handleReviewCSV(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('rv-csv-status');
+  const preview = document.getElementById('rv-csv-preview');
+  status.textContent = '파일 읽는 중...';
+
+  const text = await file.text();
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  const headers = parseCSVLine(lines[0]).map(h => h.trim());
+  const rows = lines.slice(1).map(l => {
+    const vals = parseCSVLine(l);
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = (vals[i]||'').trim());
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+
+  reviewRawData = rows;
+  status.innerHTML = `<span style="color:var(--accent);font-weight:700">${rows.length}개 리뷰 로드됨</span>`;
+
+  // 컬럼 미리보기
+  const colBadges = headers.map(h => `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:.7rem;color:var(--muted)">${h}</span>`).join(' ');
+  preview.innerHTML = `<div style="font-size:.72rem;color:var(--muted);margin-bottom:6px">감지된 컬럼:</div><div style="display:flex;flex-wrap:wrap;gap:4px">${colBadges}</div>`;
+
+  // Supabase에 저장
+  const prod = allProducts.find(p => p.id === currentProductId);
+  if (!prod) return;
+  await sb.from('review_raw').delete().eq('product_id', currentProductId);
+  const insertRows = rows.map(r => ({
+    product_id:    currentProductId,
+    product_name:  prod.name,
+    reviewer_name: r['리뷰어명'] || r['reviewer_name'] || r['프로필_이름'] || '',
+    rating:        parseFloat(r['평점'] || r['rating'] || r['별점'] || 0) || null,
+    review_text:   r['리뷰텍스트'] || r['review_text'] || r['전체_리뷰_통합'] || r['리뷰내용'] || '',
+    review_date:   r['리뷰날짜'] || r['review_date'] || r['날짜'] || '',
+  })).filter(r => r.review_text);
+  const { error } = await sb.from('review_raw').insert(insertRows);
+  if (error) showToast('리뷰 저장 실패: ' + error.message, 'error');
+  else showToast(`✅ ${insertRows.length}개 리뷰 저장 완료`, 'success');
+}
+
+// 중지 플래그
+let analysisAborted = false;
+
+function stopReviewAnalysis() {
+  analysisAborted = true;
+  const btn = document.getElementById('ai-stop-btn');
+  if (btn) { btn.textContent = '⏹ 중지 중...'; btn.disabled = true; }
 }
 
 function renderReviewData(ins, prod) {
   const tab = document.getElementById('tab-review');
   let pr=[], il=[], pos=[], neg=[];
-  try { pr = JSON.parse(ins.purchase_reasons||'[]'); } catch(e){}
-  try { il = JSON.parse(ins.install_locations||'[]'); } catch(e){}
+  try { pr  = JSON.parse(ins.purchase_reasons||'[]'); } catch(e){}
+  try { il  = JSON.parse(ins.install_locations||'[]'); } catch(e){}
   try { pos = JSON.parse(ins.positive_top5||'[]'); } catch(e){}
   try { neg = JSON.parse(ins.negative_top5||'[]'); } catch(e){}
   const total = currentPersonas.length;
 
-  // 정량 수치 계산 — 구매이유/긍정/부정 언급 페르소나 수
-  const countMentions = (keyword) =>
-    currentPersonas.filter(p => (p.review_text||'').includes(keyword.substring(0,6))).length;
-
   tab.innerHTML = `
-    <div class="ri-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <div class="ri-prod-badge">📦 ${prod?.name||''}</div>
-        <div class="ri-meta">${total}명 페르소나 리뷰 기반 · AI 자동 분석</div>
+    <div class="ri-header">
+      <div class="ri-prod-badge">📦 ${prod?.name||''}</div>
+      <div class="ri-meta">
+        ${ins.review_count ? ins.review_count+'개 리뷰 분석' : total+'명 페르소나 기반'} ·
+        ${ins.analyzed_at ? '분석: '+new Date(ins.analyzed_at).toLocaleDateString('ko-KR') : ''}
+        <span style="background:rgba(200,255,0,.1);border:1px solid rgba(200,255,0,.2);border-radius:5px;padding:1px 8px;font-size:.68rem;color:var(--accent);margin-left:8px">✓ 캐시</span>
       </div>
-      <button onclick="reAnalyze()" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 14px;color:var(--muted);font-family:'Noto Sans KR',sans-serif;font-size:.76rem;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
-        🔄 재분석
+    </div>
+
+    <!-- 재분석 버튼 -->
+    <div style="display:flex;justify-content:flex-end;margin-bottom:20px;gap:8px">
+      <button onclick="showReAnalyzeModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 14px;font-size:.75rem;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .2s" onmouseover="this.style.borderColor='var(--accent2)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+        🔄 재분석 (관리자)
       </button>
     </div>
 
-    <div class="stats-row" style="margin-bottom:24px">
-      <div class="stat-card c1"><div class="s-label">구매 이유</div><div class="s-val">${pr.length}가지</div><div class="s-sub">${pr[0]?.reason?.substring(0,8)||'-'}</div></div>
-      <div class="stat-card c2"><div class="s-label">주 설치 장소</div><div class="s-val">${il[0]?.location?.substring(0,4)||'-'}</div><div class="s-sub">${il[0]?.pct||0}% 비중</div></div>
-      <div class="stat-card c3"><div class="s-label">긍정 TOP 키워드</div><div class="s-val">${pos[0]?.keyword||'-'}</div><div class="s-sub">긍정 1위</div></div>
-      <div class="stat-card c4"><div class="s-label">부정 TOP 키워드</div><div class="s-val">${neg[0]?.keyword||'-'}</div><div class="s-sub">부정 1위</div></div>
-      <div class="stat-card c5"><div class="s-label">분석 리뷰어</div><div class="s-val">${total}명</div><div class="s-sub">제품 언급 페르소나</div></div>
-    </div>
+    <!-- 요약 -->
+    ${ins.summary ? `<div style="background:linear-gradient(135deg,rgba(200,255,0,.05),rgba(107,197,255,.05));border:1px solid rgba(200,255,0,.15);border-radius:12px;padding:18px 22px;margin-bottom:24px;font-size:.85rem;color:var(--text);line-height:1.8"><span style="color:var(--accent);font-weight:700;margin-right:8px">💡 종합 인사이트</span>${ins.summary}</div>` : ''}
 
-    <div class="ri-grid">
-      <!-- 구매 이유 -->
-      <div class="ri-card">
-        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(200,255,0,0.1)">🛒</div><div><div class="ri-card-title">구매 이유 TOP${pr.length}</div><div class="ri-card-sub">왜 이 제품을 선택했는가</div></div></div>
-        <div class="reason-list">
-          ${pr.map(r=>{
-            const n = countMentions(r.reason);
-            const p = Math.round(n/total*100);
-            return `<div class="reason-item">
-              <div class="reason-rank">${r.rank}</div>
-              <div style="flex:1">
-                <div class="reason-text"><strong>${r.reason}</strong> — ${r.detail}</div>
-                ${r.quote?`<div class="reason-quote">"${r.quote}"</div>`:''}
-                <div style="display:flex;align-items:center;gap:7px;margin-top:6px">
-                  <div style="flex:1;height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:0;height:100%;background:var(--accent);border-radius:2px;transition:width 1.2s ease" data-w="${p}%"></div></div>
-                  <span style="font-size:.68rem;color:var(--muted);flex-shrink:0">${n}명 언급 · ${p}%</span>
-                </div>
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <!-- 구매이유 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px">
+        <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:14px;font-weight:700">🛒 주요 구매 이유</div>
+        ${pr.map((r,i)=>`
+          <div style="margin-bottom:14px;padding-bottom:14px;${i<pr.length-1?'border-bottom:1px solid var(--border)':''}">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+              <span style="background:rgba(200,255,0,.1);border:1px solid rgba(200,255,0,.2);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:.65rem;color:var(--accent);font-weight:700;flex-shrink:0">${r.rank||i+1}</span>
+              <strong style="font-size:.88rem">${r.reason||''}</strong>
+              <span style="margin-left:auto;font-size:.72rem;color:var(--accent);font-weight:700">${r.mention_count||0}명</span>
+            </div>
+            <div style="font-size:.78rem;color:var(--muted);margin-left:28px;margin-bottom:4px">${r.detail||''}</div>
+            ${r.quote?`<div style="font-size:.76rem;color:var(--accent3);margin-left:28px;font-style:italic">"${r.quote}"</div>`:''}
+          </div>`).join('')}
       </div>
 
-      <!-- 설치 장소 -->
-      <div class="ri-card">
-        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(107,197,255,0.1)">📍</div><div><div class="ri-card-title">설치 장소</div><div class="ri-card-sub">어디에 두고 쓰는가</div></div></div>
-        <div class="loc-list">
-          ${il.map(l=>`
-            <div class="loc-item">
-              <div class="loc-icon">${l.icon||'📍'}</div>
-              <div class="loc-body">
-                <div style="display:flex;justify-content:space-between;align-items:baseline">
-                  <div class="loc-name">${l.location}</div>
-                  <div style="font-size:.72rem;color:var(--accent3);font-weight:700">${l.pct}%</div>
-                </div>
-                <div class="loc-detail">${l.detail}</div>
-                <div class="loc-bar-track"><div class="loc-bar-fill" style="width:0" data-w="${l.pct}%"></div></div>
-              </div>
+      <!-- 긍정/부정 -->
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;flex:1">
+          <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:12px;font-weight:700">👍 긍정 키워드 TOP5</div>
+          ${pos.map((p,i)=>`
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:.68rem;color:var(--muted);width:16px">${i+1}</span>
+              <span style="font-size:.82rem;font-weight:600">${p.keyword||''}</span>
+              <div style="flex:1;height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="height:100%;background:var(--accent);border-radius:2px;width:${Math.min(100,Math.round((p.mention_count||1)/Math.max(...pos.map(x=>x.mention_count||1))*100))}%"></div></div>
+              <span style="font-size:.7rem;color:var(--accent);font-weight:700;flex-shrink:0">${p.mention_count||0}건</span>
+            </div>`).join('')}
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;flex:1">
+          <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:12px;font-weight:700">👎 부정 키워드 TOP5</div>
+          ${neg.map((n,i)=>`
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:.68rem;color:var(--muted);width:16px">${i+1}</span>
+              <span style="font-size:.82rem;font-weight:600">${n.keyword||''}</span>
+              <div style="flex:1;height:4px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="height:100%;background:var(--accent2);border-radius:2px;width:${Math.min(100,Math.round((n.mention_count||1)/Math.max(...neg.map(x=>x.mention_count||1))*100))}%"></div></div>
+              <span style="font-size:.7rem;color:var(--accent2);font-weight:700;flex-shrink:0">${n.mention_count||0}건</span>
             </div>`).join('')}
         </div>
       </div>
+    </div>
 
-      <!-- 긍정 TOP5 -->
-      <div class="ri-card">
-        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(200,255,0,0.1)">👍</div><div><div class="ri-card-title">긍정 키워드 TOP5</div><div class="ri-card-sub">언급 빈도·강도 기준</div></div></div>
-        <div class="top5-list">
-          ${pos.map(p=>{
-            const n = countMentions(p.keyword);
-            const pct2 = Math.round(n/total*100);
-            return `<div class="top5-item pos">
-              <div class="t5-rank">T${p.rank}</div>
-              <div style="flex:1">
-                <div style="display:flex;align-items:center;justify-content:space-between">
-                  <div class="t5-kw">${p.keyword}</div>
-                  <span style="font-size:.68rem;color:var(--accent);background:rgba(200,255,0,.1);border-radius:10px;padding:1px 7px">${n}명 · ${pct2}%</span>
-                </div>
-                <div class="t5-desc">${p.desc}</div>
-                <div style="margin-top:5px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:0;height:100%;background:var(--accent);border-radius:2px;transition:width 1.2s ease" data-w="${pct2}%"></div></div>
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
+    <!-- 설치 장소 -->
+    ${il.length ? `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px">
+      <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:14px;font-weight:700">📍 주요 설치 장소</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${il.map(l=>`
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;flex:1;min-width:140px">
+            <div style="font-size:1.3rem;margin-bottom:6px">${l.icon||'📍'}</div>
+            <div style="font-size:.85rem;font-weight:700;margin-bottom:3px">${l.location||''}</div>
+            <div style="font-size:.72rem;color:var(--muted);margin-bottom:6px">${l.detail||''}</div>
+            <div style="font-size:1rem;font-weight:900;color:var(--accent3)">${l.pct||0}%</div>
+          </div>`).join('')}
       </div>
+    </div>` : ''}
 
-      <!-- 부정 TOP5 -->
-      <div class="ri-card">
-        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(255,107,107,0.1)">👎</div><div><div class="ri-card-title">부정 키워드 TOP5</div><div class="ri-card-sub">언급 빈도·강도 기준</div></div></div>
-        <div class="top5-list">
-          ${neg.map(n=>{
-            const cnt = countMentions(n.keyword);
-            const pct2 = Math.round(cnt/total*100);
-            return `<div class="top5-item neg">
-              <div class="t5-rank">T${n.rank}</div>
-              <div style="flex:1">
-                <div style="display:flex;align-items:center;justify-content:space-between">
-                  <div class="t5-kw">${n.keyword}</div>
-                  <span style="font-size:.68rem;color:var(--accent2);background:rgba(255,107,107,.1);border-radius:10px;padding:1px 7px">${cnt}명 · ${pct2}%</span>
-                </div>
-                <div class="t5-desc">${n.desc}</div>
-                <div style="margin-top:5px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden"><div style="width:0;height:100%;background:var(--accent2);border-radius:2px;transition:width 1.2s ease" data-w="${pct2}%"></div></div>
-              </div>
-            </div>`;
-          }).join('')}
+    <!-- 재분석 모달 -->
+    <div id="reanalyze-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:none;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:360px;text-align:center">
+        <div style="font-size:1.5rem;margin-bottom:12px">🔐</div>
+        <div style="font-size:.95rem;font-weight:700;color:#fff;margin-bottom:8px">관리자 재분석</div>
+        <div style="font-size:.8rem;color:var(--muted);margin-bottom:18px">비밀번호를 입력하면 기존 분석을 삭제하고 재분석합니다.</div>
+        <input id="reanalyze-pw" type="password" placeholder="비밀번호 입력" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'Noto Sans KR',sans-serif;font-size:.88rem;margin-bottom:14px;outline:none">
+        <div style="display:flex;gap:8px;justify-content:center">
+          <button onclick="confirmReAnalyze()" style="background:var(--accent2);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-family:'Noto Sans KR',sans-serif;font-size:.85rem;font-weight:700;cursor:pointer">재분석 실행</button>
+          <button onclick="closeReAnalyzeModal()" style="background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-family:'Noto Sans KR',sans-serif;font-size:.85rem;cursor:pointer">취소</button>
         </div>
-      </div>
-
-      <!-- 종합 인사이트 -->
-      <div class="ri-card full">
-        <div class="ri-card-hd"><div class="ri-icon" style="background:rgba(176,107,255,0.1)">💡</div><div><div class="ri-card-title">AI 종합 인사이트</div><div class="ri-card-sub">리뷰 전체 핵심 요약</div></div></div>
-        <div class="ri-summary">${ins.summary||''}</div>
+        <div id="reanalyze-err" style="font-size:.75rem;color:var(--accent2);margin-top:10px"></div>
       </div>
     </div>`;
-  setTimeout(() => animateBars(tab), 100);
+}
+
+// 재분석 모달
+const ADMIN_PW = 'persona2024';
+function showReAnalyzeModal() {
+  const modal = document.getElementById('reanalyze-modal');
+  if (modal) { modal.style.display = 'flex'; document.getElementById('reanalyze-pw').focus(); }
+}
+function closeReAnalyzeModal() {
+  const modal = document.getElementById('reanalyze-modal');
+  if (modal) { modal.style.display = 'none'; document.getElementById('reanalyze-pw').value = ''; document.getElementById('reanalyze-err').textContent = ''; }
+}
+async function confirmReAnalyze() {
+  const pw = document.getElementById('reanalyze-pw').value;
+  const err = document.getElementById('reanalyze-err');
+  if (pw !== ADMIN_PW) { err.textContent = '❌ 비밀번호가 틀렸습니다.'; return; }
+  closeReAnalyzeModal();
+  await sb.from('review_insights').delete().eq('product_id', currentProductId);
+  currentInsight = null;
+  renderReview();
+  showToast('기존 분석 삭제 완료. 새로 분석해주세요.', 'success');
 }
 
 async function runReviewAnalysis() {
-  const btn = document.getElementById('ai-analyze-btn');
-  const log = document.getElementById('analyze-log');
-  const prod = allProducts.find(p => p.id === currentProductId);
+  const btn     = document.getElementById('ai-analyze-btn');
+  const stopBtn = document.getElementById('ai-stop-btn');
+  const log     = document.getElementById('analyze-log');
+  const prod    = allProducts.find(p => p.id === currentProductId);
   const prodName = prod?.name || '';
 
   if (!prodName) { showToast('제품명을 확인할 수 없습니다.', 'error'); return; }
-  if (currentPersonas.length === 0) { showToast('페르소나 데이터가 없습니다.', 'error'); return; }
 
-  btn.disabled = true;
-  btn.textContent = '🔄 분석 중...';
+  analysisAborted = false;
+  btn.disabled = true; btn.textContent = '🔄 분석 중...';
+  if (stopBtn) stopBtn.style.display = 'inline-block';
 
   const addLog = (msg) => {
-    log.innerHTML += `<div style="font-size:.78rem;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border)">${msg}</div>`;
+    if (!log) return;
+    log.innerHTML += `<div style="font-size:.76rem;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--border)">${msg}</div>`;
     log.scrollTop = log.scrollHeight;
   };
 
@@ -1071,162 +1141,126 @@ async function runReviewAnalysis() {
   addLog('🔌 Gemini API 연결 테스트 중...');
   try {
     const testData = await callAI('안녕. 한 단어로만 답해.', 10);
-    if (testData.error) {
-      addLog(`❌ API 연결 실패: ${testData.error}`);
-      addLog('→ Netlify 환경변수 GEMINI_API_KEY를 다시 확인해주세요.');
-      btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
-      return;
-    }
-    addLog(`✅ API 연결 성공`);
-  } catch(e) {
-    addLog(`❌ 네트워크 오류: ${e.message}`);
-    btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
-    return;
+    if (testData.error) { addLog(`❌ API 연결 실패: ${testData.error}`); btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none'; return; }
+    addLog('✅ API 연결 성공');
+  } catch(e) { addLog(`❌ 네트워크 오류: ${e.message}`); btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none'; return; }
+
+  if (analysisAborted) { addLog('⏹ 분석이 중지되었습니다.'); btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none'; return; }
+
+  // 2) 리뷰 데이터 소스 결정 (review_raw 우선, 없으면 페르소나)
+  let reviewSamples = [];
+  const { data: rawRows } = await sb.from('review_raw').select('reviewer_name,rating,review_text').eq('product_id', currentProductId).limit(200);
+
+  if (rawRows && rawRows.length > 0) {
+    addLog(`📋 리뷰 전용 CSV 데이터 ${rawRows.length}개 사용`);
+    reviewSamples = rawRows.map(r => `[${r.reviewer_name||'?'}★${r.rating||'-'}] ${r.review_text||''}`);
+  } else {
+    addLog(`📋 페르소나 리뷰 텍스트에서 키워드 필터링 중...`);
+    const keywords = prodName.split(/\s+/).filter(k => k.length > 1);
+    currentPersonas.forEach(p => {
+      const text = p.review_text || '';
+      const sents = text.split(/[/[\]]+/).filter(s => s.trim().length > 15);
+      const rel = sents.filter(s => keywords.some(kw => s.includes(kw)));
+      if (rel.length > 0) reviewSamples.push(`[${p.profile_name||'?'}] ${rel.join(' ').substring(0,600)}`);
+    });
+    addLog(`✅ ${reviewSamples.length}명의 리뷰에서 제품 관련 내용 발견`);
   }
 
-  // 2) 키워드 필터링 — 전체 페르소나 전수 검토
-  addLog(`📌 제품명 키워드: <strong style="color:var(--accent)">"${prodName}"</strong> 로 전체 ${currentPersonas.length}명 전수 검토`);
-  const keywords = prodName.split(/\s+/).filter(k => k.length > 1);
+  if (reviewSamples.length === 0) { addLog('⚠️ 분석할 리뷰가 없습니다.'); btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none'; return; }
 
-  const relevantReviews = [];
-  currentPersonas.forEach(p => {
-    const reviewText = p.review_text || '';
-    // 슬래시/대괄호 기준으로 문장 분리
-    const sentences = reviewText.split(/[/[\]]+/).filter(s => s.trim().length > 15);
-    const relevant = sentences.filter(s => keywords.some(kw => s.includes(kw)));
-    if (relevant.length > 0) {
-      relevantReviews.push({
-        name: p.profile_name || '?',
-        // 제품 관련 문장 전체 포함 (최대 600자)
-        text: relevant.join(' ').substring(0, 600)
-      });
-    }
-  });
-
-  const matchCount = relevantReviews.length;
-  const total = currentPersonas.length;
-  addLog(`✅ ${total}명 중 <strong style="color:var(--accent)">${matchCount}명</strong>의 리뷰에서 제품 관련 내용 발견`);
-
-  if (matchCount === 0) {
-    addLog(`⚠️ "${prodName}" 관련 리뷰가 없습니다. 제품명이 전체_리뷰_통합 컬럼과 일치하는지 확인해주세요.`);
-    btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
-    return;
-  }
-
-  // 3) 배치 처리 (30명 단위)
-  const BATCH_SIZE = 30;
+  // 3) 배치 처리 (30개 단위)
+  const BATCH = 30;
   const batches = [];
-  for (let i = 0; i < relevantReviews.length; i += BATCH_SIZE) {
-    batches.push(relevantReviews.slice(i, i + BATCH_SIZE));
-  }
-  addLog(`🤖 Gemini AI가 ${matchCount}명 리뷰를 ${batches.length}개 배치로 분석 중...`);
+  for (let i = 0; i < reviewSamples.length; i += BATCH) batches.push(reviewSamples.slice(i, i+BATCH));
+  addLog(`🤖 Gemini AI가 총 ${reviewSamples.length}개 리뷰를 ${batches.length}개 배치로 분석 중...`);
 
-  let allPurchase = [], allLocations = [], allPositive = [], allNegative = [], allSummaries = [];
+  let allPurchase=[], allLocations=[], allPositive=[], allNegative=[], allSummaries=[];
 
   for (let bi = 0; bi < batches.length; bi++) {
-    const batchSample = batches[bi].map(r => `[${r.name}] ${r.text}`).join('\n---\n');
-    addLog(`  📦 배치 ${bi+1}/${batches.length} (${batches[bi].length}명) 분석 중...`);
+    if (analysisAborted) { addLog('⏹ 사용자가 분석을 중지했습니다.'); break; }
+    addLog(`  📦 배치 ${bi+1}/${batches.length} (${batches[bi].length}개) 분석 중...`);
 
-    const batchPrompt = `"${prodName}" 제품 구매자 리뷰 ${batches[bi].length}건 분석. 아래 JSON만 출력하고 다른 텍스트 없이:
+    const batchPrompt = `"${prodName}" 제품 리뷰 ${batches[bi].length}건 분석. 아래 JSON만 출력:
 
 리뷰:
-${batchSample}
+${batches[bi].join('\n---\n')}
 
-{"purchase_reasons":[{"rank":1,"reason":"구매이유키워드","detail":"30자이내설명","quote":"실제인용구","mention_count":0},{"rank":2,"reason":"키워드","detail":"설명","quote":"인용","mention_count":0},{"rank":3,"reason":"키워드","detail":"설명","quote":"인용","mention_count":0}],"install_locations":[{"location":"설치장소","icon":"🏠","detail":"설명","pct":0},{"location":"설치장소","icon":"📍","detail":"설명","pct":0}],"positive_top5":[{"rank":1,"keyword":"긍정키워드","desc":"설명","mention_count":0},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":0}],"negative_top5":[{"rank":1,"keyword":"부정키워드","desc":"설명","mention_count":0},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":0}],"summary":"핵심인사이트2문장"}`;
+{"purchase_reasons":[{"rank":1,"reason":"키워드","detail":"설명","quote":"인용","mention_count":0},{"rank":2,"reason":"키워드","detail":"설명","quote":"인용","mention_count":0},{"rank":3,"reason":"키워드","detail":"설명","quote":"인용","mention_count":0}],"install_locations":[{"location":"장소","icon":"🏠","detail":"설명","pct":0}],"positive_top5":[{"rank":1,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":0}],"negative_top5":[{"rank":1,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":2,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":3,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":4,"keyword":"키워드","desc":"설명","mention_count":0},{"rank":5,"keyword":"키워드","desc":"설명","mention_count":0}],"summary":"2문장요약"}`;
 
     try {
       const bData = await callAI(batchPrompt, 3000);
-      if (bData.error) { addLog(`  ⚠️ 배치 ${bi+1} API 오류: ${bData.error}`); continue; }
-      const bRaw = (bData.text || '').replace(/\`\`\`json|\`\`\`/g, '').trim();
+      if (bData.error) { addLog(`  ⚠️ 배치 ${bi+1} 오류: ${bData.error}`); continue; }
+      const bRaw = (bData.text||'').replace(/```json|```/g,'').trim();
       const bMatch = bRaw.match(/\{[\s\S]*\}/);
-      if (!bMatch) { addLog(`  ⚠️ 배치 ${bi+1} JSON 파싱 실패 (응답 길이: ${bRaw.length}자)`); continue; }
-      const bResult = JSON.parse(bMatch[0]);
-      if (bResult.purchase_reasons) allPurchase.push(...bResult.purchase_reasons);
-      if (bResult.install_locations) allLocations.push(...bResult.install_locations);
-      if (bResult.positive_top5) allPositive.push(...bResult.positive_top5);
-      if (bResult.negative_top5) allNegative.push(...bResult.negative_top5);
-      if (bResult.summary) allSummaries.push(bResult.summary);
+      if (!bMatch) { addLog(`  ⚠️ 배치 ${bi+1} JSON 파싱 실패`); continue; }
+      const bR = JSON.parse(bMatch[0]);
+      if (bR.purchase_reasons) allPurchase.push(...bR.purchase_reasons);
+      if (bR.install_locations) allLocations.push(...bR.install_locations);
+      if (bR.positive_top5) allPositive.push(...bR.positive_top5);
+      if (bR.negative_top5) allNegative.push(...bR.negative_top5);
+      if (bR.summary) allSummaries.push(bR.summary);
       addLog(`  ✅ 배치 ${bi+1} 완료`);
-    } catch(e) {
-      addLog(`  ⚠️ 배치 ${bi+1} 오류: ${e.message}`);
-    }
+    } catch(e) { addLog(`  ⚠️ 배치 ${bi+1} 오류: ${e.message}`); }
   }
 
-  // 4) 배치 결과 통합
-  addLog('🔗 배치 결과 통합 중...');
-
-  function mergeByKey(arr, keyField) {
-    const map = {};
-    arr.forEach(item => {
-      const k = (item[keyField] || '').substring(0, 12);
-      if (!k) return;
-      if (!map[k]) map[k] = { ...item, mention_count: 0 };
-      map[k].mention_count += (item.mention_count || 1);
-    });
-    return Object.values(map).sort((a, b) => b.mention_count - a.mention_count);
-  }
-
-  function mergeLocations(arr) {
-    const map = {};
-    arr.forEach(item => {
-      const k = (item.location || '').substring(0, 10);
-      if (!k) return;
-      if (!map[k]) map[k] = { ...item, _cnt: 0 };
-      map[k]._cnt++;
-    });
-    const t = Object.values(map).reduce((s, v) => s + v._cnt, 0) || 1;
-    return Object.values(map)
-      .map(v => ({ ...v, pct: Math.round(v._cnt / t * 100) }))
-      .sort((a, b) => b.pct - a.pct).slice(0, 4);
-  }
-
-  const result = {
-    purchase_reasons: mergeByKey(allPurchase, 'reason').slice(0, 3).map((r, i) => ({ ...r, rank: i + 1 })),
-    install_locations: mergeLocations(allLocations),
-    positive_top5: mergeByKey(allPositive, 'keyword').slice(0, 5).map((r, i) => ({ ...r, rank: i + 1 })),
-    negative_top5: mergeByKey(allNegative, 'keyword').slice(0, 5).map((r, i) => ({ ...r, rank: i + 1 })),
-    summary: allSummaries.join(' ')
-  };
-
-  if (!result.purchase_reasons.length) {
-    addLog('❌ 분석 결과가 비어있습니다. 다시 시도해주세요.');
-    btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
+  if (analysisAborted) {
+    btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none';
     return;
   }
 
-  // 5) DB 저장
-  try {
-    addLog('💾 분석 결과를 DB에 저장 중...');
-    const saveData = {
-      product_id: currentProductId,
-      product_name: prodName,
-      purchase_reasons: JSON.stringify(result.purchase_reasons),
-      install_locations: JSON.stringify(result.install_locations),
-      positive_top5: JSON.stringify(result.positive_top5),
-      negative_top5: JSON.stringify(result.negative_top5),
-      summary: result.summary
-    };
-    const { error: upsertErr } = await sb.from('review_insights').upsert(saveData, { onConflict: 'product_id' });
-    if (upsertErr) {
-      await sb.from('review_insights').insert(saveData);
-    }
-    addLog('✅ 저장 완료! 화면을 업데이트합니다.');
-    showToast('✅ 리뷰 인사이트 분석 완료!', 'success');
-    currentInsight = saveData;
-    currentInsight.purchase_reasons = saveData.purchase_reasons;
-    setTimeout(() => renderReviewData(currentInsight, prod), 500);
-  } catch(e) {
-    addLog(`❌ DB 저장 오류: ${e.message}`);
-    btn.disabled = false; btn.textContent = '🔍 AI 분석 시작하기';
+  // 4) 결과 통합
+  addLog('🔗 결과 통합 중...');
+  function mergeByKey(arr, keyField) {
+    const map = {};
+    arr.forEach(item => { const k=(item[keyField]||'').substring(0,12); if(!k) return; if(!map[k]) map[k]={...item,mention_count:0}; map[k].mention_count+=(item.mention_count||1); });
+    return Object.values(map).sort((a,b)=>b.mention_count-a.mention_count);
   }
+  function mergeLocations(arr) {
+    const map = {};
+    arr.forEach(item => { const k=(item.location||'').substring(0,10); if(!k) return; if(!map[k]) map[k]={...item,_cnt:0}; map[k]._cnt++; });
+    const t = Object.values(map).reduce((s,v)=>s+v._cnt,0)||1;
+    return Object.values(map).map(v=>({...v,pct:Math.round(v._cnt/t*100)})).sort((a,b)=>b.pct-a.pct).slice(0,4);
+  }
+
+  const result = {
+    purchase_reasons: mergeByKey(allPurchase,'reason').slice(0,3).map((r,i)=>({...r,rank:i+1})),
+    install_locations: mergeLocations(allLocations),
+    positive_top5: mergeByKey(allPositive,'keyword').slice(0,5).map((r,i)=>({...r,rank:i+1})),
+    negative_top5: mergeByKey(allNegative,'keyword').slice(0,5).map((r,i)=>({...r,rank:i+1})),
+    summary: allSummaries.join(' ')
+  };
+
+  if (!result.purchase_reasons.length) { addLog('❌ 분석 결과가 비어있습니다.'); btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none'; return; }
+
+  // 5) DB 저장
+  addLog('💾 분석 결과 DB 저장 중...');
+  const saveData = {
+    product_id:       currentProductId,
+    product_name:     prodName,
+    purchase_reasons: JSON.stringify(result.purchase_reasons),
+    install_locations: JSON.stringify(result.install_locations),
+    positive_top5:    JSON.stringify(result.positive_top5),
+    negative_top5:    JSON.stringify(result.negative_top5),
+    summary:          result.summary,
+    analyzed_at:      new Date().toISOString(),
+    review_count:     reviewSamples.length,
+    is_cached:        true
+  };
+  const { error: upsertErr } = await sb.from('review_insights').upsert(saveData, { onConflict: 'product_id' });
+  if (upsertErr) await sb.from('review_insights').insert(saveData);
+
+  addLog('✅ 저장 완료!');
+  showToast('✅ 리뷰 인사이트 분석 완료!', 'success');
+  currentInsight = saveData;
+  if(stopBtn) stopBtn.style.display='none';
+  setTimeout(() => renderReviewData(currentInsight, prod), 500);
 }
+
 async function reAnalyze() {
-  // 기존 인사이트 삭제 후 재분석
   await sb.from('review_insights').delete().eq('product_id', currentProductId);
   currentInsight = null;
   renderReview();
 }
-
 // ═══════════════════════ PERSONAS ═══════════════════════
 function renderPersonas() {
   const grid = document.getElementById('cards-grid');
