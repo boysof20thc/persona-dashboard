@@ -635,253 +635,293 @@ function renderOverview() {
   const ps = currentPersonas;
   if (ps.length === 0) { showEmptyState(); return; }
   const total = ps.length;
-  const prod = allProducts.find(p => p.id === currentProductId);
-  const pct = n => Math.round(n/total*100);
+  const prod  = allProducts.find(p => p.id === currentProductId);
+  const pct   = n => Math.round(n/total*100);
 
-  // ── 단일값 표준화 컬럼
-  const genderMap   = countMap(ps, p => p.gender);
-  const topGender   = topN(genderMap, 1)[0];
-  const ageMap      = countMap(ps, p => (p.age_group || p.age || '').trim());
-  const ageEntries  = topN(ageMap, 8);
-  const topAge      = ageEntries[0]?.[0] || '-';
-  const incomeMap   = countMap(ps, p => (p.income || '').substring(0,4).trim());
-  const topIncome   = topN(incomeMap,1)[0]?.[0] || '-';
-  const incomeEntries = topN(incomeMap, 5);
-  const married     = ps.filter(p => (p.married||'').includes('기혼')).length;
-  const childrenYes = ps.filter(p => (p.children||'').includes('있음')).length;
-  const single      = total - married;
+  // ── 기본 인구통계
+  const genderMap     = countMap(ps, p => p.gender);
+  const topGender     = topN(genderMap,1)[0];
+  const ageMap        = countMap(ps, p => (p.age_group||p.age||'').trim());
+  const ageEntries    = topN(ageMap, 8);
+  const topAge        = ageEntries[0]?.[0] || '-';
+  const incomeMap     = countMap(ps, p => (p.income||'').substring(0,4).trim());
+  const incomeEntries = topN(incomeMap,4);
+  const topIncome     = incomeEntries[0]?.[0] || '-';
+  const married       = ps.filter(p=>(p.married||'').includes('기혼')).length;
+  const childrenYes   = ps.filter(p=>(p.children||'').includes('있음')).length;
+  const single        = total - married;
   const marriedNoChild = Math.max(0, married - childrenYes);
-  const petYes      = ps.filter(p => (p.pet||'').includes('있음')).length;
-  const petNone     = ps.filter(p => (p.pet||'').includes('없음')).length;
-  const petUnknown  = total - petYes - petNone;
+  const petYes        = ps.filter(p=>(p.pet||'').includes('있음')).length;
+  const petNone       = ps.filter(p=>(p.pet||'').includes('없음')).length;
+  const petUnknown    = total - petYes - petNone;
+  const avgReviews    = Math.round(ps.reduce((s,p)=>s+(parseInt(p.total_reviews)||0),0)/total*10)/10;
+  const avgRating     = (ps.reduce((s,p)=>s+(parseFloat(p.avg_rating)||0),0)/total).toFixed(1);
 
-  // 기기
+  // ── 기기
   const deviceMap = countMap(ps, p => {
     const d = (p.device||'').trim();
     if (d.includes('Android')||d.includes('갤럭시')) return 'Android';
     if (d.includes('iOS')||d.includes('아이폰')) return 'iOS';
     return '추정불가';
   });
-  const deviceEntries = topN(deviceMap, 3);
+  const deviceEntries = topN(deviceMap,3);
   const topDevice = deviceEntries[0]?.[0] || '-';
 
-  // 직업군
-  const jobMap = countMap(ps, p => (p.job||'').trim());
-  const jobEntries = topN(jobMap, 6);
+  // ── 직업/IT
+  const jobMap     = countMap(ps, p=>(p.job||'').trim());
+  const jobEntries = topN(jobMap,5);
+  const itMap      = countMap(ps, p=>(p.it_level||'').trim());
 
-  // IT숙련도
-  const itMap = countMap(ps, p => (p.it_level||'').trim());
-  const itEntries = topN(itMap, 3);
-
-  // ── v8 신규 단일값 컬럼
-  const reviewToneMap   = countMap(ps, p => (p.review_tone||'').trim());
-  const loyaltyMap      = countMap(ps, p => (p.purchase_loyalty||'').trim());
-  const reviewStyleMap  = countMap(ps, p => (p.review_style||'').trim());
+  // ── v8 신규
+  const reviewToneMap  = countMap(ps, p=>(p.review_tone||'').trim());
+  const loyaltyMap     = countMap(ps, p=>(p.purchase_loyalty||'').trim());
+  const reviewStyleMap = countMap(ps, p=>(p.review_style||'').trim());
+  const topTone    = topN(reviewToneMap,1)[0]?.[0] || '-';
+  const topLoyalty = topN(loyaltyMap,1)[0]?.[0] || '-';
+  const topStyle   = topN(reviewStyleMap,1)[0]?.[0] || '-';
 
   // ── 태그형 복수값
   const channelMap = {};
-  ps.forEach(p => {
-    (p.info_channel||'').split(/[,，]+/).forEach(c => {
-      const k = c.trim(); if (k.length > 1) channelMap[k] = (channelMap[k]||0)+1;
-    });
-  });
-  const channelEntries = topN(channelMap, 6);
-
-  const painMap = {};
-  ps.forEach(p => {
-    (p.pain_points||'').split(/[,，]+/).forEach(t => {
-      const k = t.trim(); if (k.length > 1) painMap[k] = (painMap[k]||0)+1;
-    });
-  });
-  const topPains = topN(painMap, 6);
-
-  const unmetMap = {};
-  ps.forEach(p => {
-    (p.unmet_needs||'').split(/[,，]+/).forEach(t => {
-      const k = t.trim(); if (k.length > 1) unmetMap[k] = (unmetMap[k]||0)+1;
-    });
-  });
-  const topUnmet = topN(unmetMap, 5);
+  ps.forEach(p=>(p.info_channel||'').split(/[,，]+/).forEach(c=>{const k=c.trim();if(k.length>1)channelMap[k]=(channelMap[k]||0)+1;}));
+  const channelEntries = topN(channelMap,5);
+  const topChannel = channelEntries[0]?.[0] || '-';
 
   const shopMap = {};
-  ps.forEach(p => {
-    (p.shopping_factor||'').split(/[,，]+/).forEach(t => {
-      const k = t.trim(); if (k.length > 1) shopMap[k] = (shopMap[k]||0)+1;
-    });
-  });
-  const shopEntries = topN(shopMap, 6);
+  ps.forEach(p=>(p.shopping_factor||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)shopMap[k]=(shopMap[k]||0)+1;}));
+  const shopEntries = topN(shopMap,5);
 
-  // 평균 리뷰수 / 평점
-  const avgReviews = Math.round(ps.reduce((s,p)=>s+(parseInt(p.total_reviews)||0),0)/total*10)/10;
-  const avgRating  = (ps.reduce((s,p)=>s+(parseFloat(p.avg_rating)||0),0)/total).toFixed(1);
+  const painMap = {};
+  ps.forEach(p=>(p.pain_points||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)painMap[k]=(painMap[k]||0)+1;}));
+  const topPains = topN(painMap,5);
 
-  // 핵심 고객 프로필 태그
+  const unmetMap = {};
+  ps.forEach(p=>(p.unmet_needs||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k.length>1)unmetMap[k]=(unmetMap[k]||0)+1;}));
+  const topUnmet = topN(unmetMap,5);
+
+  // ── 핵심 고객 프로필 태그
   const profileTags = [
-    topGender?.[0]||'',
-    topAge,
-    childrenYes > total*0.5 ? '자녀 있음' : '자녀 없음',
-    topIncome + ' 소득',
-    topDevice + ' 사용자',
-    topN(jobMap,1)[0]?.[0] || ''
+    topGender?.[0]||'', topAge,
+    childrenYes>total*0.5?'자녀 있음':'자녀 없음',
+    topIncome+' 소득', topDevice+' 사용자',
+    topN(jobMap,1)[0]?.[0]||''
   ].filter(Boolean);
 
-  // 인사이트 코멘트
-  const gInsight = pct(topGender?.[1]||0) > 70
-    ? `${topGender?.[0]} 고객 ${pct(topGender?.[1]||0)}% 압도 — 성별 타겟 채널 우선 공략`
-    : '성별 분포 고른 편 — 범용 메시지 전략 유효';
-  const fInsight = childrenYes > total*0.5
-    ? `기혼+자녀 가구 ${pct(childrenYes)}% — 육아·가사 시간 절약 소구 핵심`
-    : '미혼/무자녀 비중 높음 — 개인 라이프스타일 소구 유효';
-  const topTone   = topN(reviewToneMap,1)[0]?.[0] || '-';
-  const topLoyalty = topN(loyaltyMap,1)[0]?.[0] || '-';
-  const topStyle  = topN(reviewStyleMap,1)[0]?.[0] || '-';
+  // ── 섹션 구분선 헬퍼
+  const divider = (color,icon,label,sub) => `
+    <div style="display:flex;align-items:center;gap:10px;margin:28px 0 14px;padding:10px 16px;background:${color}15;border:1px solid ${color}30;border-radius:10px">
+      <span style="font-size:1.2rem">${icon}</span>
+      <div>
+        <div style="font-size:.8rem;font-weight:700;color:${color}">${label}</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:1px">${sub}</div>
+      </div>
+    </div>`;
+
+  // ── 가로 비율 바 헬퍼
+  const ratioBars = (items) => items.filter(i=>i[1]>0).map(([label,val,color])=>`
+    <div style="margin-bottom:9px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:.76rem">${label}</span>
+        <span style="font-size:.74rem;color:${color||'var(--accent)'};font-weight:700">${val}%</span>
+      </div>
+      <div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
+        <div class="bar-fill-anim" style="height:100%;width:${val}%;background:${color||'var(--accent)'};border-radius:3px"></div>
+      </div>
+    </div>`).join('');
 
   document.getElementById('tab-overview').innerHTML = `
-    <!-- ① 핵심 고객 프로필 배너 -->
-    <div style="background:linear-gradient(135deg,rgba(200,255,0,.06),rgba(107,197,255,.06));border:1px solid rgba(200,255,0,.2);border-radius:16px;padding:22px 26px;margin-bottom:24px;position:relative;overflow:hidden">
+
+    <!-- ═══ 핵심 고객 프로필 배너 ═══ -->
+    <div style="background:linear-gradient(135deg,rgba(200,255,0,.06),rgba(107,197,255,.06));border:1px solid rgba(200,255,0,.2);border-radius:16px;padding:22px 26px;margin-bottom:8px;position:relative;overflow:hidden">
       <div style="position:absolute;top:0;right:0;width:200px;height:100%;background:radial-gradient(ellipse at right,rgba(200,255,0,.05),transparent 70%);pointer-events:none"></div>
-      <div style="font-size:.64rem;text-transform:uppercase;letter-spacing:2px;color:var(--accent);margin-bottom:10px;font-weight:700">🎯 핵심 고객 프로필</div>
-      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px">
+      <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:2px;color:var(--accent);margin-bottom:10px;font-weight:700">🎯 핵심 고객 프로필 — 데이터 자동 합성</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px">
         ${profileTags.map((tag,i)=>{
           const cs=[['rgba(200,255,0,.1)','rgba(200,255,0,.3)','var(--accent)'],['rgba(107,197,255,.1)','rgba(107,197,255,.3)','var(--accent3)'],['rgba(176,107,255,.1)','rgba(176,107,255,.3)','var(--purple)'],['rgba(255,176,107,.1)','rgba(255,176,107,.3)','var(--orange)'],['rgba(255,107,107,.1)','rgba(255,107,107,.3)','var(--accent2)'],['rgba(200,255,0,.1)','rgba(200,255,0,.3)','var(--accent)']];
           return `<span style="background:${cs[i%cs.length][0]};border:1px solid ${cs[i%cs.length][1]};border-radius:20px;padding:4px 13px;font-size:.8rem;color:${cs[i%cs.length][2]};font-weight:600">${tag}</span>`;
         }).join('')}
       </div>
-      <div style="font-size:.76rem;color:var(--muted);line-height:1.8">
-        전체 <strong style="color:#fff">${total}명</strong> 페르소나 ·
-        평균 리뷰 <strong style="color:#fff">${avgReviews}개</strong> ·
-        평균 평점 <strong style="color:var(--accent)">${avgRating}점</strong> ·
-        기혼 <strong style="color:var(--accent3)">${pct(married)}%</strong> · 자녀 <strong style="color:var(--accent3)">${pct(childrenYes)}%</strong>
-      </div>
-    </div>
-
-    <!-- ② KPI 카드 -->
-    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:24px">
-      ${[
-        {icon:'👥', lbl:'총 페르소나', val:total+'명', sub:prod?.name||'', c:'var(--accent)'},
-        {icon:'👤', lbl:'주요 성별', val:topGender?.[0]||'-', sub:pct(topGender?.[1]||0)+'% · '+(topGender?.[1]||0)+'명', c:'var(--accent2)'},
-        {icon:'📅', lbl:'주요 연령대', val:topAge, sub:pct(ageEntries[0]?.[1]||0)+'% · '+(ageEntries[0]?.[1]||0)+'명', c:'var(--accent3)'},
-        {icon:'💰', lbl:'대표 소득층', val:topIncome, sub:pct(incomeEntries[0]?.[1]||0)+'%', c:'var(--purple)'},
-        {icon:'📱', lbl:'주 사용 기기', val:topDevice, sub:pct(deviceEntries[0]?.[1]||0)+'%', c:'var(--orange)'},
-        {icon:'⭐', lbl:'평균 평점', val:avgRating+'점', sub:'평균 리뷰 '+avgReviews+'개', c:'var(--accent)'},
-      ].map(s=>`
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;position:relative;overflow:hidden">
-          <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${s.c}"></div>
-          <div style="font-size:1.2rem;margin-bottom:5px">${s.icon}</div>
-          <div style="font-size:.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:3px">${s.lbl}</div>
-          <div style="font-size:1.3rem;font-weight:900;color:#fff;line-height:1.1;margin-bottom:2px">${s.val}</div>
-          <div style="font-size:.66rem;color:${s.c};font-weight:600">${s.sub}</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+        ${[
+          {lbl:'총 페르소나',val:total+'명',c:'var(--accent)'},
+          {lbl:'평균 리뷰',val:avgReviews+'개',c:'var(--accent3)'},
+          {lbl:'평균 평점',val:avgRating+'점',c:'var(--orange)'},
+          {lbl:'기혼 비중',val:pct(married)+'%',c:'var(--purple)'},
+          {lbl:'자녀 보유',val:pct(childrenYes)+'%',c:'var(--accent2)'},
+        ].map(s=>`<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:10px 14px">
+          <div style="font-size:.6rem;color:var(--muted);margin-bottom:3px">${s.lbl}</div>
+          <div style="font-size:1.25rem;font-weight:900;color:${s.c}">${s.val}</div>
         </div>`).join('')}
-    </div>
-
-    <!-- ③ 인구통계 2열 대형 카드 -->
-    <div style="font-family:'DM Serif Display',serif;font-size:1rem;color:#fff;margin-bottom:12px">인구통계 분포 <small style="font-family:'Noto Sans KR',sans-serif;font-size:.68rem;font-weight:400;color:var(--muted);margin-left:8px">전체 ${total}명 기준</small></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h3 style="font-size:.64rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">성별 분포</h3>
-          <span style="font-size:.68rem;color:var(--accent);font-weight:700">1위 ${topGender?.[0]||'-'} ${pct(topGender?.[1]||0)}%</span>
-        </div>
-        ${barRows(topN(genderMap,3), total)}
-        <div style="margin-top:9px;padding:7px 11px;background:rgba(200,255,0,.05);border-radius:7px;font-size:.7rem;color:var(--muted)">${gInsight}</div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h3 style="font-size:.64rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">연령대 분포</h3>
-          <span style="font-size:.68rem;color:var(--accent);font-weight:700">1위 ${topAge} ${pct(ageEntries[0]?.[1]||0)}%</span>
-        </div>
-        ${barRows(ageEntries, total)}
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h3 style="font-size:.64rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">가구 유형</h3>
-          <span style="font-size:.68rem;color:var(--accent3);font-weight:700">기혼 ${pct(married)}% · 자녀 ${pct(childrenYes)}%</span>
-        </div>
-        ${barRows([['기혼·자녀 있음',childrenYes],['기혼·자녀 없음',marriedNoChild],['미혼/불명',single]], total)}
-        <div style="margin-top:9px;padding:7px 11px;background:rgba(107,197,255,.05);border-radius:7px;font-size:.7rem;color:var(--muted)">${fInsight}</div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h3 style="font-size:.64rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">직업군 분포</h3>
-          <span style="font-size:.68rem;color:var(--purple);font-weight:700">1위 ${jobEntries[0]?.[0]||'-'} ${pct(jobEntries[0]?.[1]||0)}%</span>
-        </div>
-        ${barRows(jobEntries, total)}
       </div>
     </div>
 
-    <!-- ④ v8 신규 — 리뷰 행동 패턴 3열 -->
-    <div style="font-family:'DM Serif Display',serif;font-size:1rem;color:#fff;margin-bottom:12px">리뷰 행동 패턴 <small style="font-family:'Noto Sans KR',sans-serif;font-size:.68rem;font-weight:400;color:var(--muted);margin-left:8px">v8 신규 분석 항목</small></div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--accent);border-radius:14px;padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h3 style="font-size:.64rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">리뷰 성향</h3>
-          <span style="font-size:.68rem;color:var(--accent);font-weight:700">1위 ${topTone}</span>
-        </div>
-        ${barRows(topN(reviewToneMap,4), total)}
-        <div style="margin-top:9px;padding:7px 11px;background:rgba(200,255,0,.05);border-radius:7px;font-size:.7rem;color:var(--muted)">
-          ${topTone==='긍정형'?'긍정 리뷰 비중 높음 — UGC 활용 광고 소재 적합':topTone==='비판형'?'비판형 비중 높음 — 개선 요구 파악 필요':topTone==='정보형'?'정보형 리뷰어 다수 — 상세 스펙 중심 콘텐츠 유효':'감성형 다수 — 브랜드 감성 스토리텔링 유효'}
-        </div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--accent3);border-radius:14px;padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h3 style="font-size:.64rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">구매 충성도</h3>
-          <span style="font-size:.68rem;color:var(--accent3);font-weight:700">1위 ${topLoyalty}</span>
-        </div>
-        ${barRows(topN(loyaltyMap,3), total)}
-        <div style="margin-top:9px;padding:7px 11px;background:rgba(107,197,255,.05);border-radius:7px;font-size:.7rem;color:var(--muted)">
-          ${topLoyalty==='브랜드충성형'?'브랜드 충성도 높음 — 리텐션 마케팅·멤버십 전략 유효':topLoyalty==='가성비탐색형'?'가성비 탐색형 — 가격·할인 프로모션 민감':'다양성 추구형 — 신제품·한정판 체험 마케팅 유효'}
-        </div>
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--purple);border-radius:14px;padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h3 style="font-size:.64rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">리뷰 작성 스타일</h3>
-          <span style="font-size:.68rem;color:var(--purple);font-weight:700">1위 ${topStyle}</span>
-        </div>
-        ${barRows(topN(reviewStyleMap,4), total)}
-        <div style="margin-top:9px;padding:7px 11px;background:rgba(176,107,255,.05);border-radius:7px;font-size:.7rem;color:var(--muted)">
-          ${topStyle==='장문상세형'?'장문 상세 리뷰어 — 고퀄 UGC 캠페인·리뷰 인센티브 적합':topStyle==='단답형'?'단답형 — 핵심 가치 한 줄 메시지 소구 유효':'감성 표현형 — 비주얼 콘텐츠·브랜드 무드 마케팅 유효'}
-        </div>
-      </div>
-    </div>
+    <!-- ═══ 🟢 1단계 직접추출 ═══ -->
+    ${divider('#22c55e','🟢','1단계 — 직접 추출','텍스트에서 명시적으로 확인된 사실 · 신뢰도 높음')}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
 
-    <!-- ⑤ 채널·기기·소득·IT 4열 -->
-    <div style="font-family:'DM Serif Display',serif;font-size:1rem;color:#fff;margin-bottom:12px">라이프스타일 & 채널</div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px">
-        <h3 style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:11px">정보 채널</h3>
-        ${barRows(channelEntries, total)}
+      <!-- 생애주기 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:14px;font-weight:700">👶 생애주기 · 자녀 현황</div>
+        ${ratioBars([
+          ['자녀 있음',pct(childrenYes),'#22c55e'],
+          ['기혼·무자녀',pct(marriedNoChild),'var(--accent3)'],
+          ['미혼/불명',pct(single),'var(--muted)'],
+        ])}
+        <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
+          ${childrenYes>total*0.6?'육아 가구 과반 — 자녀 안전·위생 소구 핵심':childrenYes>total*0.4?'육아 가구 비중 높음 — 패밀리 마케팅 유효':'미혼/무자녀 비중 높음 — 개인 라이프스타일 소구'}
+        </div>
       </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px">
-        <h3 style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:11px">쇼핑 결정 요인</h3>
-        ${barRows(shopEntries, total)}
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px">
-        <h3 style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:11px">주 사용 기기</h3>
-        ${barRows(deviceEntries, total)}
-      </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px">
-        <h3 style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:11px">IT 숙련도</h3>
-        ${barRows(itEntries, total)}
-      </div>
-    </div>
 
-    <!-- ⑥ Pain + Unmet 나란히 -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-      <div>
-        <div style="font-family:'DM Serif Display',serif;font-size:1rem;color:#fff;margin-bottom:12px">Pain Tags <small style="font-family:'Noto Sans KR',sans-serif;font-size:.68rem;font-weight:400;color:var(--muted);margin-left:8px">${total}명 종합 · 빈도순</small></div>
+      <!-- 반려동물 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:14px;font-weight:700">🐾 반려동물 보유 현황</div>
+        ${ratioBars([
+          ['있음',pct(petYes),'#22c55e'],
+          ['없음',pct(petNone),'var(--muted)'],
+          ['추정불가',pct(petUnknown),'var(--border)'],
+        ])}
+        <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
+          ${petYes>total*0.3?'반려동물 보유 '+pct(petYes)+'% — 펫 케어 번들 크로스셀 기회':petYes>total*0.15?'반려동물 보유 '+pct(petYes)+'% — 틈새 타겟 가능':'반려동물 보유 낮음 — 펫 마케팅 우선순위 낮음'}
+        </div>
+      </div>
+
+      <!-- Pain Tags -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:14px;font-weight:700">😣 Pain Tags · 빈도순</div>
         ${topPains.map(([k,v],i)=>`
-          <div style="background:var(--surface);border-left:3px solid var(--accent2);border-radius:8px;padding:9px 13px;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
-            <div><span style="font-size:.68rem;color:var(--muted);margin-right:6px">#${i+1}</span><span style="font-size:.8rem">${k}</span></div>
-            <span style="flex-shrink:0;font-size:.68rem;background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.25);border-radius:10px;padding:2px 9px;color:var(--accent2);font-weight:700">${v}명 · ${pct(v)}%</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:.65rem;color:var(--muted);width:16px">#${i+1}</span>
+              <span style="font-size:.79rem">${k}</span>
+            </div>
+            <span style="font-size:.68rem;background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.2);border-radius:8px;padding:2px 8px;color:var(--accent2);font-weight:700;flex-shrink:0">${v}명</span>
           </div>`).join('')}
       </div>
-      <div>
-        <div style="font-family:'DM Serif Display',serif;font-size:1rem;color:#fff;margin-bottom:12px">Unmet Tags <small style="font-family:'Noto Sans KR',sans-serif;font-size:.68rem;font-weight:400;color:var(--muted);margin-left:8px">충족되지 않은 핵심 니즈</small></div>
+    </div>
+
+    <!-- ═══ 🟡 2단계 높은추론 ═══ -->
+    ${divider('#fbbf24','🟡','2단계 — 높은 추론','구매 패턴·데이터 교차 분석으로 도출 · 신뢰도 중-상')}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+
+      <!-- 성별/연령 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:14px;font-weight:700">👤 성별 & 연령대</div>
+        <div style="margin-bottom:14px">
+          ${ratioBars(topN(genderMap,3).map(([k,v])=>[k,pct(v),k==='여성'?'var(--accent2)':'var(--accent3)']))}
+        </div>
+        <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">연령대 분포</div>
+        ${ratioBars(ageEntries.slice(0,5).map(([k,v])=>[k,pct(v),'#fbbf24']))}
+      </div>
+
+      <!-- 정보 채널 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:14px;font-weight:700">📡 주요 정보 채널</div>
+        ${ratioBars(channelEntries.map(([k,v])=>[k,pct(v),'#fbbf24']))}
+        <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(251,191,36,.05);border-radius:6px;line-height:1.6">
+          <strong style="color:#fbbf24">${topChannel}</strong> 채널 1위 — 해당 채널 콘텐츠·광고 우선 배치 권장
+        </div>
+      </div>
+
+      <!-- 소득 + 쇼핑 결정요인 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:14px;font-weight:700">💰 소득 수준 & 쇼핑 결정 요인</div>
+        <div style="margin-bottom:14px">
+          ${ratioBars(incomeEntries.map(([k,v])=>[k,pct(v),'var(--purple)']))}
+        </div>
+        <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">쇼핑 결정 요인</div>
+        ${ratioBars(shopEntries.slice(0,4).map(([k,v])=>[k,pct(v),'#fbbf24']))}
+      </div>
+    </div>
+
+    <!-- ═══ 🟠 3단계 중간추론 ═══ -->
+    ${divider('#f97316','🟠','3단계 — 중간 추론','AI 패턴 분석 기반 · 참고용으로 활용 권장')}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+
+      <!-- 직업군 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:14px;font-weight:700">💼 추정 직업군</div>
+        ${ratioBars(jobEntries.map(([k,v])=>[k,pct(v),'#f97316']))}
+      </div>
+
+      <!-- 리뷰 성향 + 스타일 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:14px;font-weight:700">✍️ 리뷰 성향 & 작성 스타일</div>
+        <div style="margin-bottom:14px">
+          ${ratioBars(topN(reviewToneMap,4).map(([k,v])=>[k,pct(v),'#f97316']))}
+        </div>
+        <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">작성 스타일</div>
+        ${ratioBars(topN(reviewStyleMap,3).map(([k,v])=>[k,pct(v),'var(--purple)']))}
+      </div>
+
+      <!-- 구매 충성도 + 기기 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:18px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:14px;font-weight:700">🔄 구매 충성도 & 사용 기기</div>
+        <div style="margin-bottom:14px">
+          ${ratioBars(topN(loyaltyMap,3).map(([k,v])=>[k,pct(v),'#f97316']))}
+        </div>
+        <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">주 사용 기기</div>
+        ${ratioBars(deviceEntries.map(([k,v])=>[k,pct(v),'var(--accent3)']))}
+        <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(249,115,22,.05);border-radius:6px;line-height:1.6">
+          ${topLoyalty==='브랜드충성형'?'브랜드 충성 — 리텐션·멤버십 전략 유효':topLoyalty==='가성비탐색형'?'가성비 탐색형 — 할인·프로모션에 민감':'다양성 추구 — 신제품 체험 마케팅 유효'}
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 🔴 4단계 참고용 ═══ -->
+    ${divider('#ef4444','🔴','4단계 — 참고용','추론 불확실성 높음 · 정성 리서치로 검증 후 활용')}
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+
+      <!-- Primary 페르소나 카드 -->
+      <div style="background:var(--surface);border:1px solid rgba(200,255,0,.25);border-top:3px solid var(--accent);border-radius:12px;padding:20px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;right:0;width:70px;height:70px;background:radial-gradient(circle,rgba(200,255,0,.08),transparent 70%)"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:.6rem;font-weight:700;color:var(--accent);background:rgba(200,255,0,.1);border:1px solid rgba(200,255,0,.2);border-radius:4px;padding:2px 8px;text-transform:uppercase;letter-spacing:1px">PRIMARY</span>
+          <span style="font-size:1.8rem;font-weight:900;color:var(--accent)">${pct(childrenYes)}%</span>
+        </div>
+        <div style="font-size:.95rem;font-weight:700;color:#fff;margin-bottom:8px">
+          ${childrenYes>total*0.5?'육아 가구 핵심 구매자':married>total*0.7?'기혼 가구 메인 구매자':'주도 페르소나'}
+        </div>
+        <div style="font-size:.76rem;color:var(--muted);line-height:1.8;margin-bottom:12px">
+          ${topAge} ${topGender?.[0]||''} · ${topIncome} 소득<br>
+          ${topN(jobMap,1)[0]?.[0]||'직장인'} · ${topChannel} 채널
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${topPains.slice(0,3).map(([k])=>`<span style="background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.18);border-radius:4px;padding:2px 7px;font-size:.66rem;color:var(--accent2)">${k}</span>`).join('')}
+        </div>
+      </div>
+
+      <!-- Secondary 페르소나 카드 -->
+      <div style="background:var(--surface);border:1px solid rgba(107,197,255,.2);border-top:3px solid var(--accent3);border-radius:12px;padding:20px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;right:0;width:70px;height:70px;background:radial-gradient(circle,rgba(107,197,255,.08),transparent 70%)"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:.6rem;font-weight:700;color:var(--accent3);background:rgba(107,197,255,.1);border:1px solid rgba(107,197,255,.2);border-radius:4px;padding:2px 8px;text-transform:uppercase;letter-spacing:1px">SECONDARY</span>
+          <span style="font-size:1.8rem;font-weight:900;color:var(--accent3)">${pct(single+marriedNoChild)}%</span>
+        </div>
+        <div style="font-size:.95rem;font-weight:700;color:#fff;margin-bottom:8px">
+          ${single>total*0.3?'미혼·1인 가구 구매자':marriedNoChild>total*0.2?'기혼·무자녀 부부 구매자':'보조 페르소나'}
+        </div>
+        <div style="font-size:.76rem;color:var(--muted);line-height:1.8;margin-bottom:12px">
+          ${ageEntries[1]?.[0]||topAge} · ${topStyle} 리뷰어<br>
+          ${topLoyalty} · ${topDevice} 사용자
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${topUnmet.slice(0,3).map(([k])=>`<span style="background:rgba(176,107,255,.08);border:1px solid rgba(176,107,255,.18);border-radius:4px;padding:2px 7px;font-size:.66rem;color:var(--purple)">${k}</span>`).join('')}
+        </div>
+      </div>
+
+      <!-- Unmet Needs + 주의사항 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-top:3px solid #ef4444;border-radius:12px;padding:20px">
+        <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#ef4444;margin-bottom:14px;font-weight:700">💭 Unmet Needs · 빈도순</div>
         ${topUnmet.map(([k,v],i)=>`
-          <div style="background:var(--surface);border-left:3px solid var(--purple);border-radius:8px;padding:9px 13px;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
-            <div><span style="font-size:.68rem;color:var(--muted);margin-right:6px">#${i+1}</span><span style="font-size:.8rem">${k}</span></div>
-            <span style="flex-shrink:0;font-size:.68rem;background:rgba(176,107,255,.12);border:1px solid rgba(176,107,255,.25);border-radius:10px;padding:2px 9px;color:var(--purple);font-weight:700">${v}명 · ${pct(v)}%</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:.65rem;color:var(--muted);width:16px">#${i+1}</span>
+              <span style="font-size:.79rem">${k}</span>
+            </div>
+            <span style="font-size:.68rem;background:rgba(176,107,255,.12);border:1px solid rgba(176,107,255,.2);border-radius:8px;padding:2px 8px;color:var(--purple);font-weight:700;flex-shrink:0">${v}명</span>
           </div>`).join('')}
+        <div style="margin-top:14px;padding:9px 11px;background:rgba(239,68,68,.05);border:1px dashed rgba(239,68,68,.25);border-radius:7px;font-size:.71rem;color:#ef4444;line-height:1.6">
+          ⚠️ 4단계 항목은 추론 불확실성이 높습니다.<br>정성 리서치로 검증 후 전략에 활용하세요.
+        </div>
       </div>
     </div>
   `;
