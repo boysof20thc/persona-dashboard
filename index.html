@@ -1662,18 +1662,25 @@ async function runCompare() {
   const pA = (psA||[]).map((p,i)=>({...p,color:PERSONA_COLORS[i%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[i%PERSONA_EMOJIS.length]}));
   const pB = (psB||[]).map((p,i)=>({...p,color:PERSONA_COLORS[(i+3)%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[(i+3)%PERSONA_EMOJIS.length]}));
 
-  // Claude로 비교 인사이트
-  const prompt = `두 제품 구매 고객 페르소나를 비교해서 JSON으로만 응답:
+  // D1~D9 요약 데이터 추출 (프롬프트용)
+  const summarize = (ps, name) => {
+    const total = ps.length; if(!total) return `${name}: 데이터 없음`;
+    const pct = n => Math.round(n/total*100);
+    const tagTop = (field, excl=[]) => { const m={}; ps.forEach(p=>(p[field]||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&!excl.includes(k))m[k]=(m[k]||0)+1;})); return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}(${pct(v)}%)`).join('/'); };
+    const cntTop = (field) => { const m={}; ps.forEach(p=>{const k=(p[field]||'').trim();if(k)m[k]=(m[k]||0)+1;}); return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}(${pct(v)}%)`).join('/'); };
+    return `${name}(${total}명): D1생애주기:${tagTop('children_detail',['미상','판별불가','있음','없음'])||cntTop('children')} 기혼${pct(ps.filter(p=>(p.married||'').includes('기혼')).length)}% | D2반려동물:보유${pct(ps.filter(p=>(p.pet||'').includes('있음')).length)}% | D3건강:${tagTop('health_diet',['해당없음'])||'없음'} | D5소비:${tagTop('consume_value')||'없음'} | D6직업:${cntTop('job')} | D7리뷰:${cntTop('review_style')} | D8지불:${tagTop('payment_type',['판별불가'])||'없음'} | D9연령:${cntTop('age_group')} | Pain:${tagTop('pain_points')} | Unmet:${tagTop('unmet_needs')} | 쇼핑:${tagTop('shopping_factor')}`;
+  };
 
-제품A (${prodA?.name}): ${pA.map(p=>`${p.profile_name||'?'}(${p.age||''},가치관:${p.core_values||p.values||''},Pain:${p.pain_points||''},Unmet:${p.unmet_needs||''})`).join(' / ')}
+  const prompt = `두 제품 구매 고객 D1~D9 데이터 비교, JSON만 응답.
 
-제품B (${prodB?.name}): ${pB.map(p=>`${p.profile_name||'?'}(${p.age||''},가치관:${p.core_values||p.values||''},Pain:${p.pain_points||''},Unmet:${p.unmet_needs||''})`).join(' / ')}
+${summarize(pA, 'A:'+prodA?.name)}
+${summarize(pB, 'B:'+prodB?.name)}
 
-{"common":["공통점1","공통점2","공통점3"],"only_a":["A특성1","A특성2","A특성3"],"only_b":["B특성1","B특성2","B특성3"],"strategy_a":"A 전략 (3문장)","strategy_b":"B 전략 (3문장)","differentiation":"차별화 포인트 (3문장)"}`;
+{"common":["공통특성1(수치포함)","공통특성2","공통특성3"],"only_a":["A만의특성1(D항목언급)","A만의특성2","A만의특성3"],"only_b":["B만의특성1(D항목언급)","B만의특성2","B만의특성3"],"strategy_a":"A전략(차이점기반3문장)","strategy_b":"B전략(차이점기반3문장)","differentiation":"핵심차별화포인트(3문장)"}`;
 
   let ai = null;
   try {
-    const data = await callAI(prompt, 800);
+    const data = await callAI(prompt, 1000);
     ai = JSON.parse((data.text||'{}').replace(/```json|```/g,'').trim());
   } catch(e) { ai = null; }
 
@@ -1683,19 +1690,115 @@ async function runCompare() {
 
 function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
   const out = document.getElementById('cmp-results');
-  const d = ai || {common:['데이터 분석 중'],only_a:['분석 중'],only_b:['분석 중'],strategy_a:'분석 중',strategy_b:'분석 중',differentiation:'분석 중'};
+  const d = ai || {common:['데이터 분석 중'],only_a:['분석 중'],only_b:['분석 중'],strategy_a:'분석 중',strategy_b:'분석 중',differentiation:'분석 중',diff_details:[]};
 
-  const miniStats = (ps) => {
-    const total = ps.length; if(!total) return '<div style="color:var(--muted);font-size:.8rem">데이터 없음</div>';
-    const married = ps.filter(p=>(p.married||'').includes('기혼')).length;
-    const children = ps.filter(p=>p.children&&!p.children.includes('없')&&!p.children.includes('불명')).length;
-    const pet = ps.filter(p=>p.pet&&!p.pet.includes('없')&&!p.pet.includes('불명')).length;
+  // ── D1~D9 전체 항목 집계 헬퍼
+  const calcStats = (ps) => {
+    const total = ps.length; if(!total) return null;
     const pct = n => Math.round(n/total*100);
-    return `
-      <div class="bar-item"><span class="bar-label" style="width:75px">기혼</span><div class="bar-track"><div class="bar-fill bf-b" style="width:0" data-w="${pct(married)}%"></div></div><span class="bar-pct">${pct(married)}%</span></div>
-      <div class="bar-item"><span class="bar-label" style="width:75px">자녀 있음</span><div class="bar-track"><div class="bar-fill bf-g" style="width:0" data-w="${pct(children)}%"></div></div><span class="bar-pct">${pct(children)}%</span></div>
-      <div class="bar-item"><span class="bar-label" style="width:75px">반려동물</span><div class="bar-track"><div class="bar-fill bf-o" style="width:0" data-w="${pct(pet)}%"></div></div><span class="bar-pct">${pct(pet)}%</span></div>`;
+    const cntMap = (fn) => { const m={}; ps.forEach(p=>{const k=fn(p);if(k)m[k]=(m[k]||0)+1;}); return m; };
+    const topN = (m,n) => Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,n);
+    const tagMap = (field, excl=[]) => { const m={}; ps.forEach(p=>(p[field]||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&!excl.includes(k))m[k]=(m[k]||0)+1;})); return m; };
+
+    // D1
+    const married    = ps.filter(p=>(p.married||'').includes('기혼')).length;
+    const mUnknown   = ps.filter(p=>{const m=(p.married||'').trim();return !m||m==='미상'||m==='판별불가';}).length;
+    const mSingle    = total-married-mUnknown;
+    const childYes   = ps.filter(p=>(p.children||'').includes('있음')).length;
+    const childNone  = ps.filter(p=>(p.children||'').includes('없음')).length;
+    const childUnk   = total-childYes-childNone;
+    // D1 생애주기 상세
+    const lcMap={}; ps.forEach(p=>(p.children_detail||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&!['미상','판별불가','해당없음','있음','없음'].includes(k))lcMap[k]=(lcMap[k]||0)+1;}));
+    const lcTop = topN(lcMap,3);
+    // D2
+    const petYes = ps.filter(p=>(p.pet||'').includes('있음')).length;
+    const petMap={}; ps.forEach(p=>(p.pet_detail||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&k!=='없음'&&k!=='미상')petMap[k]=(petMap[k]||0)+1;}));
+    // D3
+    const healthMap  = tagMap('health_diet', ['해당없음','']);
+    // D4
+    const housingMap = {}; ps.forEach(p=>{const h=(p.housing||'').split('/')[0].trim().substring(0,10);if(h&&!h.includes('판별불가'))housingMap[h]=(housingMap[h]||0)+1;});
+    // D5
+    const consumeMap = tagMap('consume_value');
+    // D6
+    const jobMap     = cntMap(p=>(p.job||'').trim());
+    // D7
+    const styleMap   = cntMap(p=>(p.review_style||'').trim());
+    // D8
+    const payMap     = tagMap('payment_type', ['판별불가']);
+    // D9
+    const ageMap     = cntMap(p=>(p.age_group||'').trim());
+    // Pain / Unmet
+    const painMap    = tagMap('pain_points');
+    const unmetMap   = tagMap('unmet_needs');
+    const shopMap    = tagMap('shopping_factor');
+    // 평균
+    const avgRating  = (ps.reduce((s,p)=>s+(parseFloat(p.avg_rating)||0),0)/total).toFixed(1);
+    const avgReviews = Math.round(ps.reduce((s,p)=>s+(parseInt(p.total_reviews)||0),0)/total);
+
+    return {total,pct,topN,married,mUnknown,mSingle,childYes,childNone,childUnk,lcTop,
+      petYes,petMap,healthMap,housingMap,consumeMap,jobMap,styleMap,payMap,ageMap,
+      painMap,unmetMap,shopMap,avgRating,avgReviews};
   };
+
+  const sA = calcStats(pA), sB = calcStats(pB);
+
+  // ── 비교 바 렌더 (두 수치 나란히)
+  const cmpBar = (label, vA, vB, colorA='var(--accent)', colorB='var(--accent3)') => `
+    <div style="margin-bottom:11px">
+      <div style="font-size:.73rem;color:#fff;margin-bottom:5px">${label}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+        <span style="font-size:.65rem;color:var(--accent);width:14px;text-align:right">A</span>
+        <div style="flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
+          <div class="bar-fill-anim" style="height:100%;width:${vA}%;background:${colorA};border-radius:3px"></div>
+        </div>
+        <span style="font-size:.72rem;font-weight:700;color:${colorA};width:32px">${vA}%</span>
+        <span style="font-size:.65rem;font-weight:700;color:${Math.abs(vA-vB)>=10?(vA>vB?'#22c55e':'#ef4444'):'var(--muted)'}">
+          ${vA>vB?'▲':'▼'}${Math.abs(vA-vB)}
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:.65rem;color:var(--accent3);width:14px;text-align:right">B</span>
+        <div style="flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
+          <div class="bar-fill-anim" style="height:100%;width:${vB}%;background:${colorB};border-radius:3px"></div>
+        </div>
+        <span style="font-size:.72rem;font-weight:700;color:${colorB};width:32px">${vB}%</span>
+        <span style="width:2rem"></span>
+      </div>
+    </div>`;
+
+  // ── 단일 섹션 바 (한 제품용)
+  const miniBar = (label, v, color, cls='bf-g') => `
+    <div class="bar-item">
+      <span class="bar-label" style="width:80px;font-size:.72rem">${label}</span>
+      <div class="bar-track"><div class="bar-fill ${cls}" style="width:0" data-w="${v}%"></div></div>
+      <span class="bar-pct">${v}%</span>
+    </div>`;
+
+  // ── 태그 리스트 (상위 N개)
+  const tagList = (map, topN_, color) => topN_(map,5).map(([k,v])=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-size:.77rem">${k}</span>
+      <span style="font-size:.68rem;background:${color}18;border:1px solid ${color}30;border-radius:6px;padding:1px 7px;color:${color};font-weight:700">${v}명</span>
+    </div>`).join('');
+
+  // ── 차이 강조 뱃지
+  const diffBadge = (vA, vB, thr=15) => {
+    const diff = vA - vB;
+    if (Math.abs(diff) < thr) return `<span style="font-size:.62rem;color:var(--muted)">≈ 유사</span>`;
+    return diff > 0
+      ? `<span style="font-size:.62rem;background:rgba(200,255,0,.12);border:1px solid rgba(200,255,0,.25);border-radius:4px;padding:1px 6px;color:var(--accent)">A +${diff}%p ↑</span>`
+      : `<span style="font-size:.62rem;background:rgba(107,197,255,.12);border:1px solid rgba(107,197,255,.25);border-radius:4px;padding:1px 6px;color:var(--accent3)">B +${Math.abs(diff)}%p ↑</span>`;
+  };
+
+  // ── 비교 섹션 헤더 헬퍼
+  const secHdr = (icon, title, sub, color='var(--muted)') => `
+    <div style="display:flex;align-items:center;gap:10px;margin:22px 0 14px;padding:9px 14px;background:${color}08;border:1px solid ${color}20;border-radius:9px">
+      <span style="font-size:1.1rem">${icon}</span>
+      <div>
+        <div style="font-size:.8rem;font-weight:700;color:${color}">${title}</div>
+        <div style="font-size:.67rem;color:var(--muted)">${sub}</div>
+      </div>
+    </div>`;
 
   const top5Html = (items, type) => (items||[]).slice(0,3).map(x=>`<div class="top5-item ${type}" style="margin-bottom:5px"><div class="t5-rank">T${x.rank}</div><div><div class="t5-kw">${x.keyword}</div><div class="t5-desc">${x.desc}</div></div></div>`).join('');
   let posA=[],negA=[],posB=[],negB=[];
@@ -1704,57 +1807,185 @@ function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
   try{posB=JSON.parse(insB?.positive_top5||'[]');}catch(e){}
   try{negB=JSON.parse(insB?.negative_top5||'[]');}catch(e){}
 
+  if (!sA || !sB) { out.innerHTML='<div style="color:var(--muted);padding:40px;text-align:center">페르소나 데이터가 없습니다</div>'; return; }
+
   out.innerHTML = `
-  <!-- 개요 비교 -->
-  <div class="cmp-section">
-    <div class="cmp-sec-hd"><div class="cmp-sec-icon">📊</div><div><div class="cmp-sec-title">페르소나 개요 비교</div><div class="cmp-sec-sub">두 제품 구매자 기본 특성</div></div></div>
-    <div class="cmp-2col">
-      <div class="cmp-col cmp-col-a"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent)"></div><div><div class="cmp-col-name">${prodA?.name||''}</div><div class="cmp-col-cnt">페르소나 ${pA.length}명</div></div></div>${miniStats(pA)}</div>
-      <div class="cmp-col cmp-col-b"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent3)"></div><div><div class="cmp-col-name">${prodB?.name||''}</div><div class="cmp-col-cnt">페르소나 ${pB.length}명</div></div></div>${miniStats(pB)}</div>
+
+  <!-- ① 요약 KPI 카드 -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:6px">
+    ${[
+      {lbl:'페르소나 수',vA:sA.total+'명',vB:sB.total+'명'},
+      {lbl:'평균 평점',vA:sA.avgRating+'점',vB:sB.avgRating+'점'},
+      {lbl:'자녀 보유',vA:sA.pct(sA.childYes)+'%',vB:sB.pct(sB.childYes)+'%'},
+      {lbl:'반려동물',vA:sA.pct(sA.petYes)+'%',vB:sB.pct(sB.petYes)+'%'},
+    ].map(s=>`
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 16px">
+        <div style="font-size:.62rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">${s.lbl}</div>
+        <div style="display:flex;gap:10px">
+          <div style="flex:1;text-align:center;background:rgba(200,255,0,.06);border-radius:6px;padding:6px 0">
+            <div style="font-size:.58rem;color:var(--accent);margin-bottom:2px">A</div>
+            <div style="font-size:1.05rem;font-weight:900;color:var(--accent)">${s.vA}</div>
+          </div>
+          <div style="flex:1;text-align:center;background:rgba(107,197,255,.06);border-radius:6px;padding:6px 0">
+            <div style="font-size:.58rem;color:var(--accent3);margin-bottom:2px">B</div>
+            <div style="font-size:1.05rem;font-weight:900;color:var(--accent3)">${s.vB}</div>
+          </div>
+        </div>
+      </div>`).join('')}
+  </div>
+
+  <!-- ② D1~D9 상세 비교 -->
+  ${secHdr('📊','D1~D9 항목별 상세 비교','개요 탭과 동일한 분석 항목 나란히 비교','#22c55e')}
+
+  <!-- D1 생애주기 + 결혼여부 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:#22c55e;margin-bottom:3px;text-transform:uppercase">D1 · 생애주기</div>
+      <div style="font-size:.65rem;color:var(--muted);margin-bottom:12px">자녀 보유 현황</div>
+      ${cmpBar('자녀 있음', sA.pct(sA.childYes), sB.pct(sB.childYes), 'var(--accent)','var(--accent3)')}
+      ${cmpBar('기혼', sA.pct(sA.married), sB.pct(sB.married), 'var(--purple)','var(--purple)')}
+      <div style="margin-top:10px;font-size:.64rem;color:var(--muted)">생애주기 유형 A</div>
+      ${sA.lcTop.slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent)">${sA.pct(v)}%</span></div>`).join('')}
+      <div style="margin-top:8px;font-size:.64rem;color:var(--muted)">생애주기 유형 B</div>
+      ${sB.lcTop.slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent3)">${sB.pct(v)}%</span></div>`).join('')}
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:#22c55e;margin-bottom:3px;text-transform:uppercase">D2 · 반려동물</div>
+      <div style="font-size:.65rem;color:var(--muted);margin-bottom:12px">보유 현황 비교</div>
+      ${cmpBar('반려동물 있음', sA.pct(sA.petYes), sB.pct(sB.petYes), 'var(--accent)','var(--accent3)')}
+      <div style="margin-top:10px;font-size:.64rem;color:var(--muted)">종류 분포 A</div>
+      ${sA.topN(sA.petMap,3).slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent)">${sA.pct(v)}%</span></div>`).join('')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      <div style="margin-top:8px;font-size:.64rem;color:var(--muted)">종류 분포 B</div>
+      ${sB.topN(sB.petMap,3).slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent3)">${sB.pct(v)}%</span></div>`).join('')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:#22c55e;margin-bottom:3px;text-transform:uppercase">D3 · 건강식이</div>
+      <div style="font-size:.65rem;color:var(--muted);margin-bottom:12px">건강·식이 패턴</div>
+      <div style="font-size:.64rem;color:var(--accent);margin-bottom:5px">제품 A</div>
+      ${tagList(sA.healthMap, sA.topN, 'var(--accent)')||'<div style="font-size:.73rem;color:var(--muted)">데이터 없음</div>'}
+      <div style="margin-top:10px;font-size:.64rem;color:var(--accent3);margin-bottom:5px">제품 B</div>
+      ${tagList(sB.healthMap, sB.topN, 'var(--accent3)')||'<div style="font-size:.73rem;color:var(--muted)">데이터 없음</div>'}
     </div>
   </div>
-  <!-- 리뷰 비교 -->
-  ${(insA||insB)?`<div class="cmp-section">
-    <div class="cmp-sec-hd"><div class="cmp-sec-icon">🔍</div><div><div class="cmp-sec-title">리뷰 인사이트 비교</div><div class="cmp-sec-sub">긍정·부정 키워드 나란히</div></div></div>
-    <div class="cmp-2col">
-      <div class="cmp-col cmp-col-a"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent)"></div><div><div class="cmp-col-name">${prodA?.name||''}</div></div></div>
-        ${posA.length?`<div style="font-size:.7rem;color:var(--accent);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👍 긍정</div>${top5Html(posA,'pos')}`:'<div style="color:var(--muted);font-size:.8rem">데이터 없음</div>'}
-        ${negA.length?`<div style="font-size:.7rem;color:var(--accent2);margin-top:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👎 부정</div>${top5Html(negA,'neg')}`:''}
-      </div>
-      <div class="cmp-col cmp-col-b"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent3)"></div><div><div class="cmp-col-name">${prodB?.name||''}</div></div></div>
-        ${posB.length?`<div style="font-size:.7rem;color:var(--accent3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👍 긍정</div>${top5Html(posB,'pos').replace(/class="top5-item pos"/g,'class="top5-item" style="border-left:3px solid var(--accent3);background:var(--surface2)"')}`:'<div style="color:var(--muted);font-size:.8rem">데이터 없음</div>'}
-        ${negB.length?`<div style="font-size:.7rem;color:var(--accent2);margin-top:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👎 부정</div>${top5Html(negB,'neg')}`:''}
-      </div>
+
+  <!-- D5/D6/D7/D8 비교 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:#fbbf24;margin-bottom:3px;text-transform:uppercase">D5 · 소비가치관</div>
+      <div style="font-size:.65rem;color:var(--muted);margin-bottom:10px">구매 가치 우선순위</div>
+      <div style="font-size:.63rem;color:var(--accent);margin-bottom:4px">A</div>
+      ${tagList(sA.consumeMap, sA.topN, 'var(--accent)')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      <div style="margin-top:9px;font-size:.63rem;color:var(--accent3);margin-bottom:4px">B</div>
+      ${tagList(sB.consumeMap, sB.topN, 'var(--accent3)')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:#fbbf24;margin-bottom:3px;text-transform:uppercase">D8 · 지불의향</div>
+      <div style="font-size:.65rem;color:var(--muted);margin-bottom:10px">구매 소비 유형</div>
+      <div style="font-size:.63rem;color:var(--accent);margin-bottom:4px">A</div>
+      ${tagList(sA.payMap, sA.topN, 'var(--accent)')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      <div style="margin-top:9px;font-size:.63rem;color:var(--accent3);margin-bottom:4px">B</div>
+      ${tagList(sB.payMap, sB.topN, 'var(--accent3)')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:#f97316;margin-bottom:3px;text-transform:uppercase">D6 · 직업패턴</div>
+      <div style="font-size:.65rem;color:var(--muted);margin-bottom:10px">추정 직업 비교</div>
+      ${cmpBar('직장인', sA.pct(sA.jobMap['직장인']||0), sB.pct(sB.jobMap['직장인']||0),'var(--accent)','var(--accent3)')}
+      ${cmpBar('전업주부', sA.pct(sA.jobMap['전업주부']||0), sB.pct(sB.jobMap['전업주부']||0),'var(--accent)','var(--accent3)')}
+      ${cmpBar('추정불가', sA.pct(sA.jobMap['추정불가']||0), sB.pct(sB.jobMap['추정불가']||0),'var(--muted)','var(--muted)')}
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:#f97316;margin-bottom:3px;text-transform:uppercase">D7 · 리뷰스타일</div>
+      <div style="font-size:.65rem;color:var(--muted);margin-bottom:10px">리뷰 작성 유형</div>
+      ${['포토상세형','핵심요약형','감성소통형','단순별점형'].map(k=>
+        cmpBar(k, sA.pct(sA.styleMap[k]||0), sB.pct(sB.styleMap[k]||0),'var(--accent)','var(--accent3)')
+      ).join('')}
+    </div>
+  </div>
+
+  <!-- Pain / Unmet / 쇼핑요인 비교 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:6px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:var(--accent2);margin-bottom:10px;text-transform:uppercase">😣 Pain Tags 비교</div>
+      <div style="font-size:.63rem;color:var(--accent);margin-bottom:5px">제품 A 상위 Pain</div>
+      ${tagList(sA.painMap, sA.topN, 'var(--accent2)')||'없음'}
+      <div style="margin-top:10px;font-size:.63rem;color:var(--accent3);margin-bottom:5px">제품 B 상위 Pain</div>
+      ${tagList(sB.painMap, sB.topN, 'var(--accent2)')||'없음'}
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--purple);border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:var(--purple);margin-bottom:10px;text-transform:uppercase">💭 Unmet Needs 비교</div>
+      <div style="font-size:.63rem;color:var(--accent);margin-bottom:5px">제품 A</div>
+      ${tagList(sA.unmetMap, sA.topN, 'var(--purple)')||'없음'}
+      <div style="margin-top:10px;font-size:.63rem;color:var(--accent3);margin-bottom:5px">제품 B</div>
+      ${tagList(sB.unmetMap, sB.topN, 'var(--purple)')||'없음'}
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--orange);border-radius:12px;padding:16px">
+      <div style="font-size:.62rem;font-weight:700;color:var(--orange);margin-bottom:10px;text-transform:uppercase">🛒 쇼핑 결정 요인</div>
+      <div style="font-size:.63rem;color:var(--accent);margin-bottom:5px">제품 A</div>
+      ${tagList(sA.shopMap, sA.topN, 'var(--orange)')||'없음'}
+      <div style="margin-top:10px;font-size:.63rem;color:var(--accent3);margin-bottom:5px">제품 B</div>
+      ${tagList(sB.shopMap, sB.topN, 'var(--orange)')||'없음'}
+    </div>
+  </div>
+
+  <!-- ③ 차이점 분석 (AI) -->
+  ${secHdr('🔍','고객 차이점 분석','두 제품 구매자의 핵심 차이점 · AI 분석 기반','#fbbf24')}
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:6px">
+    <div style="background:rgba(176,107,255,.05);border:1px solid rgba(176,107,255,.2);border-radius:12px;padding:16px">
+      <div style="font-size:.64rem;font-weight:700;color:var(--purple);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px">🔗 공통점</div>
+      ${d.common.map(x=>`<div style="font-size:.8rem;padding:6px 0;border-bottom:1px solid var(--border);line-height:1.6">${x}</div>`).join('')}
+    </div>
+    <div style="background:rgba(200,255,0,.04);border:1px solid rgba(200,255,0,.15);border-radius:12px;padding:16px">
+      <div style="font-size:.64rem;font-weight:700;color:var(--accent);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px">🟡 A만의 특성</div>
+      ${d.only_a.map(x=>`<div style="font-size:.8rem;padding:6px 0;border-bottom:1px solid var(--border);line-height:1.6">${x}</div>`).join('')}
+    </div>
+    <div style="background:rgba(107,197,255,.04);border:1px solid rgba(107,197,255,.15);border-radius:12px;padding:16px">
+      <div style="font-size:.64rem;font-weight:700;color:var(--accent3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px">🔵 B만의 특성</div>
+      ${d.only_b.map(x=>`<div style="font-size:.8rem;padding:6px 0;border-bottom:1px solid var(--border);line-height:1.6">${x}</div>`).join('')}
+    </div>
+  </div>
+
+  <!-- ④ 리뷰 인사이트 비교 -->
+  ${(insA||insB)?`
+  ${secHdr('⭐','리뷰 인사이트 비교','긍정·부정 키워드 나란히','var(--orange)')}
+  <div class="cmp-2col">
+    <div class="cmp-col cmp-col-a"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent)"></div><div><div class="cmp-col-name">${prodA?.name||''}</div></div></div>
+      ${posA.length?`<div style="font-size:.7rem;color:var(--accent);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👍 긍정</div>${top5Html(posA,'pos')}`:'<div style="color:var(--muted);font-size:.8rem">리뷰 분석 없음</div>'}
+      ${negA.length?`<div style="font-size:.7rem;color:var(--accent2);margin-top:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👎 부정</div>${top5Html(negA,'neg')}`:''}
+    </div>
+    <div class="cmp-col cmp-col-b"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent3)"></div><div><div class="cmp-col-name">${prodB?.name||''}</div></div></div>
+      ${posB.length?`<div style="font-size:.7rem;color:var(--accent3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👍 긍정</div>${top5Html(posB,'pos').replace(/class="top5-item pos"/g,'class="top5-item" style="border-left:3px solid var(--accent3);background:var(--surface2)"')}`:'<div style="color:var(--muted);font-size:.8rem">리뷰 분석 없음</div>'}
+      ${negB.length?`<div style="font-size:.7rem;color:var(--accent2);margin-top:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px">👎 부정</div>${top5Html(negB,'neg')}`:''}
     </div>
   </div>`:''}
-  <!-- 동시 좌담회 -->
-  <div class="cmp-section">
-    <div class="cmp-sec-hd"><div class="cmp-sec-icon">🎤</div><div><div class="cmp-sec-title">두 제품 고객 동시 좌담회</div><div class="cmp-sec-sub">같은 질문, 서로 다른 고객의 답변</div></div></div>
-    <div class="survey-box" style="margin-bottom:16px">
-      <textarea class="q-input" id="cmp-focus-q" placeholder="두 제품 고객에게 동시에 물어볼 질문을 입력하세요..." style="margin-bottom:10px"></textarea>
-      <button class="run-btn" id="cmp-focus-run" onclick="runCmpFocus(${prodA?.id},${prodB?.id})">💬 동시에 물어보기</button>
+
+  <!-- ⑤ 동시 좌담회 -->
+  ${secHdr('🎤','두 제품 고객 동시 좌담회','같은 질문, 서로 다른 고객의 답변','var(--purple)')}
+  <div class="survey-box" style="margin-bottom:16px">
+    <textarea class="q-input" id="cmp-focus-q" placeholder="두 제품 고객에게 동시에 물어볼 질문을 입력하세요..." style="margin-bottom:10px"></textarea>
+    <button class="run-btn" id="cmp-focus-run" onclick="runCmpFocus(${prodA?.id},${prodB?.id})">💬 동시에 물어보기</button>
+  </div>
+  <div class="cmp-focus-grid">
+    <div><div class="cmp-focus-hd cmp-fa-hd">📦 ${prodA?.name||''} 고객</div><div class="cmp-focus-col" id="cmp-resp-a"></div></div>
+    <div><div class="cmp-focus-hd cmp-fb-hd">📦 ${prodB?.name||''} 고객</div><div class="cmp-focus-col" id="cmp-resp-b"></div></div>
+  </div>
+
+  <!-- ⑥ 마케팅 전략 비교 -->
+  ${secHdr('💡','제품별 마케팅 전략','차이점 기반 차별화 전략 제안','var(--purple)')}
+  <div class="cmp-2col" style="margin-bottom:14px">
+    <div class="cmp-col cmp-col-a">
+      <div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent)"></div><div><div class="cmp-col-name">${prodA?.name||''} 전략</div></div></div>
+      <p style="font-size:.84rem;line-height:1.75">${d.strategy_a}</p>
     </div>
-    <div class="cmp-focus-grid">
-      <div><div class="cmp-focus-hd cmp-fa-hd">📦 ${prodA?.name||''} 고객</div><div class="cmp-focus-col" id="cmp-resp-a"></div></div>
-      <div><div class="cmp-focus-hd cmp-fb-hd">📦 ${prodB?.name||''} 고객</div><div class="cmp-focus-col" id="cmp-resp-b"></div></div>
+    <div class="cmp-col cmp-col-b">
+      <div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent3)"></div><div><div class="cmp-col-name">${prodB?.name||''} 전략</div></div></div>
+      <p style="font-size:.84rem;line-height:1.75">${d.strategy_b}</p>
     </div>
   </div>
-  <!-- 마케팅 인사이트 비교 -->
-  <div class="cmp-section">
-    <div class="cmp-sec-hd"><div class="cmp-sec-icon">💡</div><div><div class="cmp-sec-title">마케팅 인사이트 비교</div><div class="cmp-sec-sub">공통점·차이점·제품별 차별화 전략</div></div></div>
-    <div class="diff-grid">
-      <div class="diff-card common"><div class="diff-label">🔗 공통점</div>${d.common.map(x=>`<div class="diff-item">${x}</div>`).join('')}</div>
-      <div class="diff-card only-a"><div class="diff-label">🟡 ${prodA?.name?.substring(0,10)||'제품A'} 특성</div>${d.only_a.map(x=>`<div class="diff-item">${x}</div>`).join('')}</div>
-      <div class="diff-card only-b"><div class="diff-label">🔵 ${prodB?.name?.substring(0,10)||'제품B'} 특성</div>${d.only_b.map(x=>`<div class="diff-item">${x}</div>`).join('')}</div>
-    </div>
-    <div class="cmp-2col" style="margin-top:14px">
-      <div class="cmp-col cmp-col-a"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent)"></div><div><div class="cmp-col-name">${prodA?.name||''} 전략</div></div></div><p style="font-size:.84rem;line-height:1.7">${d.strategy_a}</p></div>
-      <div class="cmp-col cmp-col-b"><div class="cmp-col-hd"><div class="cmp-col-dot" style="background:var(--accent3)"></div><div><div class="cmp-col-name">${prodB?.name||''} 전략</div></div></div><p style="font-size:.84rem;line-height:1.7">${d.strategy_b}</p></div>
-    </div>
-    <div style="background:rgba(176,107,255,0.07);border:1px solid rgba(176,107,255,0.2);border-radius:11px;padding:18px;margin-top:14px">
-      <div style="font-size:.68rem;color:var(--purple);text-transform:uppercase;letter-spacing:1px;margin-bottom:9px">🎯 제품 차별화 포인트</div>
-      <p style="font-size:.86rem;line-height:1.75">${d.differentiation}</p>
-    </div>
+  <div style="background:rgba(176,107,255,.07);border:1px solid rgba(176,107,255,.2);border-radius:11px;padding:18px">
+    <div style="font-size:.68rem;color:var(--purple);text-transform:uppercase;letter-spacing:1px;margin-bottom:9px">🎯 제품 차별화 포인트</div>
+    <p style="font-size:.86rem;line-height:1.75">${d.differentiation}</p>
   </div>`;
 
   setTimeout(() => animateBars(out), 100);
