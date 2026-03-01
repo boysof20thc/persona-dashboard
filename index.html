@@ -687,10 +687,15 @@ function renderOverview() {
   const incomeMap     = countMap(ps, p => (p.income||'').substring(0,4).trim());
   const incomeEntries = topN(incomeMap,4);
   const topIncome     = incomeEntries[0]?.[0] || '-';
-  const married       = ps.filter(p=>(p.married||'').includes('기혼')).length;
-  const childrenYes   = ps.filter(p=>(p.children||'').includes('있음')).length;
-  const single        = total - married;
-  const marriedNoChild = Math.max(0, married - childrenYes);
+  const married        = ps.filter(p=>(p.married||'').includes('기혼')).length;
+  const marriedUnknown = ps.filter(p=>{const m=(p.married||'').trim();return !m||m==='미상'||m==='판별불가';}).length;
+  const marriedSingle  = total - married - marriedUnknown;
+  // 자녀/생애주기: children 컬럼(D1_생애주기 정규화값) 단일 기준
+  const childrenYes    = ps.filter(p=>(p.children||'').includes('있음')).length;
+  const childrenNone   = ps.filter(p=>(p.children||'').includes('없음')).length;
+  const childrenUnknown= total - childrenYes - childrenNone;
+  const marriedNoChild = ps.filter(p=>(p.married||'').includes('기혼')&&!(p.children||'').includes('있음')).length;
+  const single         = marriedSingle; // 결혼여부 기준 미혼
   const petYes        = ps.filter(p=>(p.pet||'').includes('있음')).length;
   const petNone       = ps.filter(p=>(p.pet||'').includes('없음')).length;
   const petUnknown    = total - petYes - petNone;
@@ -824,7 +829,7 @@ function renderOverview() {
           {lbl:'평균 리뷰수',val:avgReviews+'개',c:'var(--accent3)'},
           {lbl:'평균 평점',val:avgRating+'점',c:'var(--orange)'},
           {lbl:'기혼 (D1)',val:pct(married)+'%',c:'var(--purple)'},
-          {lbl:'자녀 보유 (D1)',val:pct(childrenYes)+'%',c:'var(--accent2)'},
+          {lbl:'자녀 (D1생애주기)',val:pct(childrenYes)+'%',c:'var(--accent2)'},
           {lbl:'반려동물 (D2)',val:pct(petYes)+'%',c:'#22c55e'},
         ].map(s=>`<div style="background:rgba(0,0,0,.25);border-radius:8px;padding:10px 14px">
           <div style="font-size:.6rem;color:var(--muted);margin-bottom:3px">${s.lbl}</div>
@@ -840,15 +845,24 @@ function renderOverview() {
       <!-- D1 생애주기 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
         <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:4px;font-weight:700">D1 · 생애주기</div>
-        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">결혼여부 · 자녀현황</div>
-        ${ratioBars([
-          ['자녀 있음',pct(childrenYes),'#22c55e'],
-          ['기혼·무자녀',pct(marriedNoChild),'var(--accent3)'],
-          ['미혼/불명',pct(single),'var(--muted)'],
-        ])}
-        ${lifecycleEntries.length ? `
-        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">생애주기 유형</div>
-        ${ratioBars(lifecycleEntries.slice(0,3).map(([k,v])=>[k,pct(v),'#22c55e']))}` : ''}
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">생애주기 유형 기준 · 합계 100%</div>
+
+        <!-- 생애주기 유형 (D1_생애주기 단일 기준, 미상 포함해서 100%) -->
+        ${(() => {
+          const lcAll = [...lifecycleEntries];
+          if (childrenUnknown > 0) lcAll.push(['미상', childrenUnknown]);
+          return ratioBars(lcAll.map(([k,v])=>[k, pct(v), k==='미상'?'var(--muted)':'#22c55e']));
+        })()}
+
+        <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+          <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">결혼여부 (D1_결혼여부 기준 · 별도)</div>
+          ${ratioBars([
+            ['기혼', pct(married), '#22c55e'],
+            ['미혼', pct(marriedSingle), 'var(--accent3)'],
+            ['미상', pct(marriedUnknown), 'var(--muted)'],
+          ])}
+        </div>
+
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
           ${childrenYes>total*0.6?'육아 가구 과반 — 자녀 안전·위생 소구 핵심':childrenYes>total*0.4?'육아 가구 비중 높음 — 패밀리 마케팅 유효':'미혼/무자녀 비중 높음 — 개인 라이프스타일 소구'}
         </div>
@@ -905,8 +919,12 @@ function renderOverview() {
         <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:4px;font-weight:700">D9 · 연령대 추정</div>
         <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">& 결혼여부 (D1)</div>
         ${ratioBars(ageEntries.slice(0,4).map(([k,v])=>[k,pct(v),'#fbbf24']))}
-        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">결혼여부</div>
-        ${ratioBars(topN(countMap(ps,p=>(p.married||'').trim()),3).map(([k,v])=>[k,pct(v),'var(--purple)']))}
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">결혼여부 (합계 100%)</div>
+        ${ratioBars([
+          ['기혼', pct(married), 'var(--purple)'],
+          ['미혼', pct(marriedSingle), 'var(--accent3)'],
+          ['미상', pct(marriedUnknown), 'var(--muted)'],
+        ])}
       </div>
 
       <!-- D5 소비가치관 + 쇼핑결정요인 -->
@@ -986,7 +1004,7 @@ function renderOverview() {
         <div style="position:absolute;top:0;right:0;width:70px;height:70px;background:radial-gradient(circle,rgba(200,255,0,.08),transparent 70%)"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <span style="font-size:.6rem;font-weight:700;color:var(--accent);background:rgba(200,255,0,.1);border:1px solid rgba(200,255,0,.2);border-radius:4px;padding:2px 8px;text-transform:uppercase;letter-spacing:1px">PRIMARY</span>
-          <span style="font-size:1.8rem;font-weight:900;color:var(--accent)">${pct(childrenYes)}%</span>
+          <span style="font-size:1.8rem;font-weight:900;color:var(--accent)">${lifecycleEntries[0]?pct(lifecycleEntries[0][1])+'%':pct(childrenYes)+'%'}</span>
         </div>
         <div style="font-size:.95rem;font-weight:700;color:#fff;margin-bottom:8px">
           ${lifecycleEntries[0]?lifecycleEntries[0][0]+' 구매자':childrenYes>total*0.5?'육아 가구 핵심 구매자':'주도 페르소나'}
@@ -1005,7 +1023,7 @@ function renderOverview() {
         <div style="position:absolute;top:0;right:0;width:70px;height:70px;background:radial-gradient(circle,rgba(107,197,255,.08),transparent 70%)"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <span style="font-size:.6rem;font-weight:700;color:var(--accent3);background:rgba(107,197,255,.1);border:1px solid rgba(107,197,255,.2);border-radius:4px;padding:2px 8px;text-transform:uppercase;letter-spacing:1px">SECONDARY</span>
-          <span style="font-size:1.8rem;font-weight:900;color:var(--accent3)">${pct(single+marriedNoChild)}%</span>
+          <span style="font-size:1.8rem;font-weight:900;color:var(--accent3)">${lifecycleEntries[1]?pct(lifecycleEntries[1][1])+'%':pct(marriedSingle)+'%'}</span>
         </div>
         <div style="font-size:.95rem;font-weight:700;color:#fff;margin-bottom:8px">
           ${lifecycleEntries[1]?lifecycleEntries[1][0]+' 구매자':single>total*0.3?'미혼·1인 가구 구매자':'보조 페르소나'}
