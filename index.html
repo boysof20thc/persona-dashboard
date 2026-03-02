@@ -440,8 +440,8 @@ const PERSONA_COLORS = ['#c8ff00','#ffb06b','#6bc5ff','#b06bff','#ff6b6b','#ff9f
 const PERSONA_EMOJIS = ['🌿','🐾','🏡','👨‍👩‍👧','🐱','💼','👶','👔','🎨','🌸'];
 
 // ═══════════════════════ INIT ═══════════════════════
-window.addEventListener('load', () => {
-  loadProducts();
+window.addEventListener('load', async () => {
+  await loadProducts();
 });
 
 async function loadProducts() {
@@ -522,6 +522,7 @@ async function handleCSVUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
+  console.log('[CSV] 업로드 시작:', file.name);
   showToast('CSV 파일 읽는 중...', 'success');
 
   const text = await file.text();
@@ -542,6 +543,7 @@ async function handleCSVUpload(event) {
   const productName = rows[0]['제품명'] || rows[0]['product_name'] || file.name.replace('.csv','');
   const productCategory = rows[0]['카테고리'] || rows[0]['category'] || '기타';
 
+  console.log('[CSV] 파싱 완료, 제품명:', productName, '행수:', rows.length);
   showToast(`"${productName}" 저장 중...`, 'success');
 
   // Supabase에 제품 upsert
@@ -549,9 +551,15 @@ async function handleCSVUpload(event) {
     { name: productName, category: productCategory },
     { onConflict: 'name' }
   ).select();
-  if (upe || !upserted || !upserted[0]) { showToast('제품 저장 실패: ' + (upe?.message||'unknown'), 'error'); return; }
+  console.log('[CSV] upsert 결과:', upserted, '오류:', upe);
+  if (upe || !upserted || !upserted[0]) { 
+    console.error('[CSV] 제품 저장 실패:', upe);
+    showToast('제품 저장 실패: ' + (upe?.message||'unknown'), 'error'); 
+    return; 
+  }
   const prod = upserted[0];
   const productId = prod.id;
+  console.log('[CSV] 제품 ID:', productId);
 
   // 기존 페르소나 삭제
   await sb.from('personas').delete().eq('product_id', productId);
@@ -638,6 +646,7 @@ async function handleCSVUpload(event) {
   const BATCH = 50;
   for (let i = 0; i < personaRows.length; i += BATCH) {
     const { error: ie } = await sb.from('personas').insert(personaRows.slice(i, i + BATCH));
+    console.log(`[CSV] 배치 ${i}~${i+BATCH} 저장:`, ie ? '실패: '+ie.message : '성공');
     if (ie) { showToast('페르소나 저장 오류: ' + ie.message, 'error'); return; }
   }
 
