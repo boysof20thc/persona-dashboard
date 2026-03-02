@@ -962,9 +962,12 @@ function renderOverview() {
           ['추정불가', pct(petUnknown), 'var(--border)'],
         ])}
         ${petDetailEntries.length ? `
-        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">종류별 비율 (전체 모수 기준)</div>
-        ${ratioBars(petDetailEntries.map(([k,v])=>[k,pct(v),'#22c55e']))}
-        <div style="font-size:.62rem;color:var(--muted);margin-top:4px;line-height:1.4">※ 복수 반려동물 보유 시 중복 집계 — 합계가 있음% 초과 가능</div>` : ''}
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">종류별 비율 (반려동물 보유자 기준)</div>
+        ${(() => {
+          const petTotal = petDetailEntries.reduce((s,[,v])=>s+v, 0) || 1;
+          return ratioBars(petDetailEntries.map(([k,v])=>[k, Math.round(v/petTotal*petYes/total*100), '#22c55e']));
+        })()}
+        <div style="font-size:.62rem;color:var(--muted);margin-top:4px;line-height:1.4">※ 종류별 합계 = 있음(${pct(petYes)}%)와 일치</div>` : ''}
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
           ${petYes>total*0.3?'반려동물 보유 '+pct(petYes)+'% — 펫 케어 크로스셀 기회':petYes>total*0.15?'반려동물 보유 '+pct(petYes)+'% — 틈새 타겟 가능':'반려동물 보유 낮음 — 관련 마케팅 우선순위 낮음'}
         </div>
