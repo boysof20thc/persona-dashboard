@@ -1870,7 +1870,11 @@ function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
   const sA = calcStats(pA), sB = calcStats(pB);
 
   // ── 비교 바 렌더 (두 수치 나란히)
-  const cmpBar = (label, vA, vB, colorA='var(--accent)', colorB='var(--accent3)') => `
+  // cmpBar: nA, nB = 실제 명수 (선택), totalA, totalB = 각 제품 총수
+  const cmpBar = (label, vA, vB, colorA='var(--accent)', colorB='var(--accent3)', nA=null, nB=null) => {
+    const diff = Math.abs(vA-vB);
+    const insightColor = diff>=15 ? (vA>vB?'#22c55e':'#6bc5ff') : diff>=10 ? '#fbbf24' : 'var(--muted)';
+    return `
     <div style="margin-bottom:11px">
       <div style="font-size:.73rem;color:#fff;margin-bottom:5px">${label}</div>
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
@@ -1878,9 +1882,9 @@ function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
         <div style="flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
           <div class="bar-fill-anim" style="height:100%;width:${vA}%;background:${colorA};border-radius:3px"></div>
         </div>
-        <span style="font-size:.72rem;font-weight:700;color:${colorA};width:32px">${vA}%</span>
-        <span style="font-size:.65rem;font-weight:700;color:${Math.abs(vA-vB)>=10?(vA>vB?'#22c55e':'#ef4444'):'var(--muted)'}">
-          ${vA>vB?'▲':'▼'}${Math.abs(vA-vB)}
+        <span style="font-size:.72rem;font-weight:700;color:${colorA};min-width:32px">${vA}%${nA!==null?` <span style="font-size:.62rem;font-weight:400;color:var(--muted)">(${nA}명)</span>`:''}</span>
+        <span style="font-size:.65rem;font-weight:700;color:${insightColor};min-width:2.5rem">
+          ${diff>=10?(vA>vB?'▲':'▼')+diff+'%p':'≈'}
         </span>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
@@ -1888,10 +1892,10 @@ function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
         <div style="flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
           <div class="bar-fill-anim" style="height:100%;width:${vB}%;background:${colorB};border-radius:3px"></div>
         </div>
-        <span style="font-size:.72rem;font-weight:700;color:${colorB};width:32px">${vB}%</span>
-        <span style="width:2rem"></span>
+        <span style="font-size:.72rem;font-weight:700;color:${colorB};min-width:32px">${vB}%${nB!==null?` <span style="font-size:.62rem;font-weight:400;color:var(--muted)">(${nB}명)</span>`:''}</span>
       </div>
     </div>`;
+  };
 
   // ── 단일 섹션 바 (한 제품용)
   const miniBar = (label, v, color, cls='bf-g') => `
@@ -1902,10 +1906,14 @@ function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
     </div>`;
 
   // ── 태그 리스트 (상위 N개)
-  const tagList = (map, topN_, color) => topN_(map,5).map(([k,v])=>`
+  // tagList: 명수 + % 동시 표시, total은 해당 제품 total
+  const tagList = (map, topN_, color, total_=0) => topN_(map,5).map(([k,v])=>`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <span style="font-size:.77rem">${k}</span>
-      <span style="font-size:.68rem;background:${color}18;border:1px solid ${color}30;border-radius:6px;padding:1px 7px;color:${color};font-weight:700">${v}명</span>
+      <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+        ${total_?`<span style="font-size:.66rem;color:var(--muted)">${Math.round(v/total_*100)}%</span>`:''}
+        <span style="font-size:.68rem;background:${color}18;border:1px solid ${color}30;border-radius:6px;padding:1px 7px;color:${color};font-weight:700">${v}명</span>
+      </div>
     </div>`).join('');
 
   // ── 차이 강조 뱃지
@@ -1969,31 +1977,34 @@ function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:#22c55e;margin-bottom:3px;text-transform:uppercase">D1 · 생애주기</div>
       <div style="font-size:.65rem;color:var(--muted);margin-bottom:12px">자녀 보유 현황</div>
-      ${cmpBar('자녀 있음', sA.pct(sA.childYes), sB.pct(sB.childYes), 'var(--accent)','var(--accent3)')}
-      ${cmpBar('기혼', sA.pct(sA.married), sB.pct(sB.married), 'var(--purple)','var(--purple)')}
+      ${cmpBar('자녀 있음', sA.pct(sA.childYes), sB.pct(sB.childYes), 'var(--accent)','var(--accent3)', sA.childYes, sB.childYes)}
+      ${cmpBar('기혼', sA.pct(sA.married), sB.pct(sB.married), 'var(--purple)','var(--purple)', sA.married, sB.married)}
       <div style="margin-top:10px;font-size:.64rem;color:var(--muted)">생애주기 유형 A</div>
-      ${sA.lcTop.slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent)">${sA.pct(v)}%</span></div>`).join('')}
+      ${sA.lcTop.slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent)">${sA.pct(v)}% (${v}명)</span></div>`).join('')}
       <div style="margin-top:8px;font-size:.64rem;color:var(--muted)">생애주기 유형 B</div>
-      ${sB.lcTop.slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent3)">${sB.pct(v)}%</span></div>`).join('')}
+      ${sB.lcTop.slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent3)">${sB.pct(v)}% (${v}명)</span></div>`).join('')}
+      ${(()=>{const d=sA.pct(sA.childYes)-sB.pct(sB.childYes);return Math.abs(d)>=10?`<div style="margin-top:10px;padding:7px 10px;background:rgba(255,191,36,.06);border:1px solid rgba(255,191,36,.2);border-radius:7px;font-size:.69rem;color:#fbbf24;line-height:1.5">💡 자녀 보유 비중 ${d>0?'A':'B'}가 ${Math.abs(d)}%p 높음 — ${d>0?'A 제품 구매자가 육아 가구 중심, 패밀리 마케팅 유효':'B 제품 구매자가 육아 가구 중심, 패밀리 마케팅 유효'}</div>`:''})()}
     </div>
 
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:#22c55e;margin-bottom:3px;text-transform:uppercase">D2 · 반려동물</div>
       <div style="font-size:.65rem;color:var(--muted);margin-bottom:12px">보유 현황 비교</div>
-      ${cmpBar('반려동물 있음', sA.pct(sA.petYes), sB.pct(sB.petYes), 'var(--accent)','var(--accent3)')}
+      ${cmpBar('반려동물 있음', sA.pct(sA.petYes), sB.pct(sB.petYes), 'var(--accent)','var(--accent3)', sA.petYes, sB.petYes)}
       <div style="margin-top:10px;font-size:.64rem;color:var(--muted)">종류 분포 A</div>
-      ${sA.topN(sA.petMap,3).slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent)">${sA.pct(v)}%</span></div>`).join('')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${sA.topN(sA.petMap,3).slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent)">${sA.pct(v)}% (${v}명)</span></div>`).join('')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
       <div style="margin-top:8px;font-size:.64rem;color:var(--muted)">종류 분포 B</div>
-      ${sB.topN(sB.petMap,3).slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent3)">${sB.pct(v)}%</span></div>`).join('')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${sB.topN(sB.petMap,3).slice(0,3).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:.73rem;margin-top:4px"><span>${k}</span><span style="color:var(--accent3)">${sB.pct(v)}% (${v}명)</span></div>`).join('')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${(()=>{const d=sA.pct(sA.petYes)-sB.pct(sB.petYes);return Math.abs(d)>=10?`<div style="margin-top:10px;padding:7px 10px;background:rgba(255,191,36,.06);border:1px solid rgba(255,191,36,.2);border-radius:7px;font-size:.69rem;color:#fbbf24;line-height:1.5">💡 반려동물 보유 비중 ${d>0?'A':'B'}가 ${Math.abs(d)}%p 높음 — 펫 케어 관련 번들/크로스셀 기회 상이</div>`:''})()}
     </div>
 
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:#22c55e;margin-bottom:3px;text-transform:uppercase">D3 · 건강식이</div>
       <div style="font-size:.65rem;color:var(--muted);margin-bottom:12px">건강·식이 패턴</div>
       <div style="font-size:.64rem;color:var(--accent);margin-bottom:5px">제품 A</div>
-      ${tagList(sA.healthMap, sA.topN, 'var(--accent)')||'<div style="font-size:.73rem;color:var(--muted)">데이터 없음</div>'}
+      ${tagList(sA.healthMap, sA.topN, 'var(--accent)', sA.total)||'<div style="font-size:.73rem;color:var(--muted)">데이터 없음</div>'}
       <div style="margin-top:10px;font-size:.64rem;color:var(--accent3);margin-bottom:5px">제품 B</div>
-      ${tagList(sB.healthMap, sB.topN, 'var(--accent3)')||'<div style="font-size:.73rem;color:var(--muted)">데이터 없음</div>'}
+      ${tagList(sB.healthMap, sB.topN, 'var(--accent3)', sB.total)||'<div style="font-size:.73rem;color:var(--muted)">데이터 없음</div>'}
+      ${(()=>{const tA=sA.topN(sA.healthMap,1)[0],tB=sB.topN(sB.healthMap,1)[0];if(!tA||!tB)return '';const kA=tA[0],kB=tB[0];return kA!==kB?`<div style="margin-top:10px;padding:7px 10px;background:rgba(255,191,36,.06);border:1px solid rgba(255,191,36,.2);border-radius:7px;font-size:.69rem;color:#fbbf24;line-height:1.5">💡 1위 건강 관심사 상이 — A: <b>${kA}</b> vs B: <b>${kB}</b> — 콘텐츠 소구 방향 분리 필요</div>`:''})()}
     </div>
   </div>
 
@@ -2003,31 +2014,35 @@ function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
       <div style="font-size:.62rem;font-weight:700;color:#fbbf24;margin-bottom:3px;text-transform:uppercase">D5 · 소비가치관</div>
       <div style="font-size:.65rem;color:var(--muted);margin-bottom:10px">구매 가치 우선순위</div>
       <div style="font-size:.63rem;color:var(--accent);margin-bottom:4px">A</div>
-      ${tagList(sA.consumeMap, sA.topN, 'var(--accent)')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${tagList(sA.consumeMap, sA.topN, 'var(--accent)', sA.total)||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
       <div style="margin-top:9px;font-size:.63rem;color:var(--accent3);margin-bottom:4px">B</div>
-      ${tagList(sB.consumeMap, sB.topN, 'var(--accent3)')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${tagList(sB.consumeMap, sB.topN, 'var(--accent3)', sB.total)||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${(()=>{const tA=sA.topN(sA.consumeMap,1)[0],tB=sB.topN(sB.consumeMap,1)[0];if(!tA||!tB)return '';return tA[0]!==tB[0]?`<div style="margin-top:9px;padding:6px 9px;background:rgba(255,191,36,.06);border:1px solid rgba(255,191,36,.2);border-radius:6px;font-size:.68rem;color:#fbbf24;line-height:1.5">💡 소비가치 1위 상이 — A: <b>${tA[0]}</b> vs B: <b>${tB[0]}</b></div>`:''})()}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:#fbbf24;margin-bottom:3px;text-transform:uppercase">D8 · 지불의향</div>
       <div style="font-size:.65rem;color:var(--muted);margin-bottom:10px">구매 소비 유형</div>
       <div style="font-size:.63rem;color:var(--accent);margin-bottom:4px">A</div>
-      ${tagList(sA.payMap, sA.topN, 'var(--accent)')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${tagList(sA.payMap, sA.topN, 'var(--accent)', sA.total)||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
       <div style="margin-top:9px;font-size:.63rem;color:var(--accent3);margin-bottom:4px">B</div>
-      ${tagList(sB.payMap, sB.topN, 'var(--accent3)')||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${tagList(sB.payMap, sB.topN, 'var(--accent3)', sB.total)||'<div style="font-size:.73rem;color:var(--muted)">없음</div>'}
+      ${(()=>{const tA=sA.topN(sA.payMap,1)[0],tB=sB.topN(sB.payMap,1)[0];if(!tA||!tB)return '';return tA[0]!==tB[0]?`<div style="margin-top:9px;padding:6px 9px;background:rgba(255,191,36,.06);border:1px solid rgba(255,191,36,.2);border-radius:6px;font-size:.68rem;color:#fbbf24;line-height:1.5">💡 지불 유형 1위 상이 — A: <b>${tA[0]}</b> vs B: <b>${tB[0]}</b> — 가격 소구 전략 분리 필요</div>`:''})()}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:#f97316;margin-bottom:3px;text-transform:uppercase">D6 · 직업패턴</div>
       <div style="font-size:.65rem;color:var(--muted);margin-bottom:10px">추정 직업 비교</div>
-      ${cmpBar('직장인', sA.pct(sA.jobMap['직장인']||0), sB.pct(sB.jobMap['직장인']||0),'var(--accent)','var(--accent3)')}
-      ${cmpBar('전업주부', sA.pct(sA.jobMap['전업주부']||0), sB.pct(sB.jobMap['전업주부']||0),'var(--accent)','var(--accent3)')}
-      ${cmpBar('추정불가', sA.pct(sA.jobMap['추정불가']||0), sB.pct(sB.jobMap['추정불가']||0),'var(--muted)','var(--muted)')}
+      ${cmpBar('직장인', sA.pct(sA.jobMap['직장인']||0), sB.pct(sB.jobMap['직장인']||0),'var(--accent)','var(--accent3)', sA.jobMap['직장인']||0, sB.jobMap['직장인']||0)}
+      ${cmpBar('전업주부', sA.pct(sA.jobMap['전업주부']||0), sB.pct(sB.jobMap['전업주부']||0),'var(--accent)','var(--accent3)', sA.jobMap['전업주부']||0, sB.jobMap['전업주부']||0)}
+      ${cmpBar('추정불가', sA.pct(sA.jobMap['추정불가']||0), sB.pct(sB.jobMap['추정불가']||0),'var(--muted)','var(--muted)', sA.jobMap['추정불가']||0, sB.jobMap['추정불가']||0)}
+      ${(()=>{const d=sA.pct(sA.jobMap['직장인']||0)-sB.pct(sB.jobMap['직장인']||0);const d2=sA.pct(sA.jobMap['전업주부']||0)-sB.pct(sB.jobMap['전업주부']||0);const msgs=[];if(Math.abs(d)>=10)msgs.push(`직장인 비중 ${d>0?'A':'B'}가 ${Math.abs(d)}%p 높음`);if(Math.abs(d2)>=10)msgs.push(`전업주부 비중 ${d2>0?'A':'B'}가 ${Math.abs(d2)}%p 높음`);return msgs.length?`<div style="margin-top:9px;padding:6px 9px;background:rgba(255,191,36,.06);border:1px solid rgba(255,191,36,.2);border-radius:6px;font-size:.68rem;color:#fbbf24;line-height:1.5">💡 ${msgs.join(' · ')}</div>`:''})()}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #f97316;border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:#f97316;margin-bottom:3px;text-transform:uppercase">D7 · 리뷰스타일</div>
       <div style="font-size:.65rem;color:var(--muted);margin-bottom:10px">리뷰 작성 유형</div>
       ${['포토상세형','핵심요약형','감성소통형','단순별점형'].map(k=>
-        cmpBar(k, sA.pct(sA.styleMap[k]||0), sB.pct(sB.styleMap[k]||0),'var(--accent)','var(--accent3)')
+        cmpBar(k, sA.pct(sA.styleMap[k]||0), sB.pct(sB.styleMap[k]||0),'var(--accent)','var(--accent3)', sA.styleMap[k]||0, sB.styleMap[k]||0)
       ).join('')}
+      ${(()=>{const tops=['포토상세형','핵심요약형','감성소통형','단순별점형'];const diffs=tops.map(k=>[k,sA.pct(sA.styleMap[k]||0)-sB.pct(sB.styleMap[k]||0)]).filter(([,d])=>Math.abs(d)>=15);return diffs.length?`<div style="margin-top:9px;padding:6px 9px;background:rgba(255,191,36,.06);border:1px solid rgba(255,191,36,.2);border-radius:6px;font-size:.68rem;color:#fbbf24;line-height:1.5">💡 ${diffs.map(([k,d])=>`${k} ${d>0?'A':'B'}가 ${Math.abs(d)}%p 높음`).join(' · ')} — 콘텐츠 포맷 전략 분리 검토</div>`:''})()}
     </div>
   </div>
 
@@ -2036,23 +2051,26 @@ function renderCompareResult(prodA, prodB, pA, pB, insA, insB, ai) {
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:var(--accent2);margin-bottom:10px;text-transform:uppercase">😣 Pain Tags 비교</div>
       <div style="font-size:.63rem;color:var(--accent);margin-bottom:5px">제품 A 상위 Pain</div>
-      ${tagList(sA.painMap, sA.topN, 'var(--accent2)')||'없음'}
+      ${tagList(sA.painMap, sA.topN, 'var(--accent2)', sA.total)||'없음'}
       <div style="margin-top:10px;font-size:.63rem;color:var(--accent3);margin-bottom:5px">제품 B 상위 Pain</div>
-      ${tagList(sB.painMap, sB.topN, 'var(--accent2)')||'없음'}
+      ${tagList(sB.painMap, sB.topN, 'var(--accent2)', sB.total)||'없음'}
+      ${(()=>{const tA=sA.topN(sA.painMap,1)[0],tB=sB.topN(sB.painMap,1)[0];if(!tA||!tB)return '';return tA[0]!==tB[0]?`<div style="margin-top:9px;padding:6px 9px;background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.2);border-radius:6px;font-size:.68rem;color:var(--accent2);line-height:1.5">💡 핵심 Pain 상이 — A: <b>${tA[0]}</b>(${sA.pct(tA[1])}%) vs B: <b>${tB[0]}</b>(${sB.pct(tB[1])}%) — 불만 해소 메시지 각각 다르게 설계</div>`:''})()}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--purple);border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:var(--purple);margin-bottom:10px;text-transform:uppercase">💭 Unmet Needs 비교</div>
       <div style="font-size:.63rem;color:var(--accent);margin-bottom:5px">제품 A</div>
-      ${tagList(sA.unmetMap, sA.topN, 'var(--purple)')||'없음'}
+      ${tagList(sA.unmetMap, sA.topN, 'var(--purple)', sA.total)||'없음'}
       <div style="margin-top:10px;font-size:.63rem;color:var(--accent3);margin-bottom:5px">제품 B</div>
-      ${tagList(sB.unmetMap, sB.topN, 'var(--purple)')||'없음'}
+      ${tagList(sB.unmetMap, sB.topN, 'var(--purple)', sB.total)||'없음'}
+      ${(()=>{const tA=sA.topN(sA.unmetMap,1)[0],tB=sB.topN(sB.unmetMap,1)[0];if(!tA||!tB)return '';return tA[0]!==tB[0]?`<div style="margin-top:9px;padding:6px 9px;background:rgba(176,107,255,.06);border:1px solid rgba(176,107,255,.2);border-radius:6px;font-size:.68rem;color:var(--purple);line-height:1.5">💡 Unmet Needs 1위 상이 — A: <b>${tA[0]}</b> vs B: <b>${tB[0]}</b> — 기능 기획 방향 분리 필요</div>`:''})()}
     </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--orange);border-radius:12px;padding:16px">
       <div style="font-size:.62rem;font-weight:700;color:var(--orange);margin-bottom:10px;text-transform:uppercase">🛒 쇼핑 결정 요인</div>
       <div style="font-size:.63rem;color:var(--accent);margin-bottom:5px">제품 A</div>
-      ${tagList(sA.shopMap, sA.topN, 'var(--orange)')||'없음'}
+      ${tagList(sA.shopMap, sA.topN, 'var(--orange)', sA.total)||'없음'}
       <div style="margin-top:10px;font-size:.63rem;color:var(--accent3);margin-bottom:5px">제품 B</div>
-      ${tagList(sB.shopMap, sB.topN, 'var(--orange)')||'없음'}
+      ${tagList(sB.shopMap, sB.topN, 'var(--orange)', sB.total)||'없음'}
+      ${(()=>{const tA=sA.topN(sA.shopMap,1)[0],tB=sB.topN(sB.shopMap,1)[0];if(!tA||!tB)return '';return tA[0]!==tB[0]?`<div style="margin-top:9px;padding:6px 9px;background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);border-radius:6px;font-size:.68rem;color:var(--orange);line-height:1.5">💡 구매 결정 요인 1위 상이 — A: <b>${tA[0]}</b> vs B: <b>${tB[0]}</b> — 광고 카피 소구점 다르게 설정</div>`:''})()}
     </div>
   </div>
 
