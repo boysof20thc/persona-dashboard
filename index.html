@@ -776,12 +776,11 @@ function renderOverview() {
   const childrenNone   = ps.filter(p=>(p.children||'').includes('없음')).length;
   const childrenUnknown= total - childrenYes - childrenNone;
   const single         = marriedSingle;
-  // ── D2 반려동물: 종류별 합산으로 있음/없음 재계산
-  const PET_TYPE_KW = ['반려견','강아지','반려묘','고양이','소동물','다견','다묘','햄스터','토끼','새','물고기'];
-  const petFromDetail  = p => PET_TYPE_KW.some(kw => (p.pet_detail||'').includes(kw));
-  const petYes        = ps.filter(p => (p.pet||'').includes('있음') || petFromDetail(p)).length;
-  const petNone       = ps.filter(p => (p.pet||'').includes('없음') && !petFromDetail(p)).length;
-  const petUnknown    = total - petYes - petNone;
+  // ── D2 반려동물: pet_detail(=D2_반려동물 원본값) 기준
+  // 없음이 포함되면 없음, 그 외(반려견·소동물 등 값 존재)면 있음, 공백/미상이면 추정불가
+  const petYes     = ps.filter(p => { const d=(p.pet_detail||'').trim(); return d && !d.includes('없음') && !['미상','판별불가'].includes(d); }).length;
+  const petNone    = ps.filter(p => (p.pet_detail||'').includes('없음')).length;
+  const petUnknown = total - petYes - petNone;
   const avgReviews    = Math.round(ps.reduce((s,p)=>s+(parseInt(p.total_reviews)||0),0)/total*10)/10;
   const avgRating     = (ps.reduce((s,p)=>s+(parseFloat(p.avg_rating)||0),0)/total).toFixed(1);
 
@@ -843,8 +842,18 @@ function renderOverview() {
   const paymentEntries = topN(paymentMap,5);
 
   // ── D2 반려동물 상세
-  const petDetailMap = {}; ps.forEach(p=>(p.pet_detail||'').split(/[,，]+/).forEach(t=>{const k=t.trim();if(k&&k!=='없음'&&k!=='미상')petDetailMap[k]=(petDetailMap[k]||0)+1;}));
-  const petDetailEntries = topN(petDetailMap,4);
+  // D2_반려동물 원본값 그대로 종류별 집계 (없음·미상·판별불가 제외, 복수값 분리)
+  const petDetailMap = {};
+  ps.forEach(p => {
+    const d = (p.pet_detail||'').trim();
+    if (!d || d.includes('없음') || d==='미상' || d==='판별불가') return;
+    // 쉼표/슬래시로 복수값 분리
+    d.split(/[,，\/]+/).forEach(t => {
+      const k = t.trim();
+      if (k && k.length > 0) petDetailMap[k] = (petDetailMap[k]||0) + 1;
+    });
+  });
+  const petDetailEntries = topN(petDetailMap, 6);
 
   // ── 핵심 고객 프로필 태그 (D1~D9 기반)
   const topJob = topN(jobMap,1)[0]?.[0] || '';
@@ -962,12 +971,9 @@ function renderOverview() {
           ['추정불가', pct(petUnknown), 'var(--border)'],
         ])}
         ${petDetailEntries.length ? `
-        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">종류별 비율 (반려동물 보유자 기준)</div>
-        ${(() => {
-          const petTotal = petDetailEntries.reduce((s,[,v])=>s+v, 0) || 1;
-          return ratioBars(petDetailEntries.map(([k,v])=>[k, Math.round(v/petTotal*petYes/total*100), '#22c55e']));
-        })()}
-        <div style="font-size:.62rem;color:var(--muted);margin-top:4px;line-height:1.4">※ 종류별 합계 = 있음(${pct(petYes)}%)와 일치</div>` : ''}
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">종류별 비율 (전체 기준 · D2 원본)</div>
+        ${ratioBars(petDetailEntries.map(([k,v])=>[k, pct(v), '#22c55e']))}
+        <div style="font-size:.62rem;color:var(--muted);margin-top:4px;line-height:1.4">※ 복수 보유 시 중복 집계될 수 있으나 있음(${pct(petYes)}%)과 근사</div>` : ''}
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
           ${petYes>total*0.3?'반려동물 보유 '+pct(petYes)+'% — 펫 케어 크로스셀 기회':petYes>total*0.15?'반려동물 보유 '+pct(petYes)+'% — 틈새 타겟 가능':'반려동물 보유 낮음 — 관련 마케팅 우선순위 낮음'}
         </div>
