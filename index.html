@@ -26,6 +26,7 @@ header{padding:28px 48px;border-bottom:1px solid var(--border);display:flex;alig
 .prod-select option{background:var(--surface2);color:var(--text);}
 .upload-btn{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 16px;color:var(--muted);font-family:'Noto Sans KR',sans-serif;font-size:0.8rem;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s;}
 .upload-btn:hover{border-color:var(--accent);color:var(--accent);}
+.upload-btn.review-btn:hover{border-color:var(--accent3);color:var(--accent3);}
 .upload-btn input{display:none;}
 
 /* NAV */
@@ -280,10 +281,24 @@ nav::-webkit-scrollbar{height:0;}
         <option value="">— 제품 로딩 중 —</option>
       </select>
     </div>
-    <label class="upload-btn">
-      📂 CSV 업로드
-      <input type="file" accept=".csv" id="csv-file-input" onchange="handleCSVUpload(event)">
-    </label>
+
+    <!-- ① 페르소나 CSV 업로드 -->
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+      <label class="upload-btn" id="persona-upload-btn">
+        👤 페르소나 CSV
+        <input type="file" accept=".csv" id="csv-file-input" onchange="handleCSVUpload(event)">
+      </label>
+      <span id="persona-upload-status" style="font-size:.62rem;color:var(--muted);padding-right:2px">개요·페르소나 분석용</span>
+    </div>
+
+    <!-- ② 리뷰 CSV 업로드 -->
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+      <label class="upload-btn" id="review-upload-btn" style="border-color:rgba(107,197,255,.35);color:var(--accent3)">
+        ⭐ 리뷰 CSV
+        <input type="file" accept=".csv" id="review-file-input-header" onchange="handleReviewCSVHeader(event)">
+      </label>
+      <span id="review-upload-status" style="font-size:.62rem;color:var(--muted);padding-right:2px">리뷰 인사이트 분석용</span>
+    </div>
   </div>
 </header>
 
@@ -669,6 +684,10 @@ async function handleCSVUpload(event) {
   personaRows.forEach(r => { r.id = nextId(); memDB.personas.push(r); });
 
   showToast(`✅ "${productName}" ${rows.length}명 업로드 완료!`, 'success');
+
+  // 헤더 상태 업데이트
+  const ps = document.getElementById('persona-upload-status');
+  if (ps) { ps.textContent = `✅ ${productName} · ${rows.length}명`; ps.style.color = 'var(--accent)'; }
 
   // 제품 목록 새로고침 후 해당 제품으로 전환
   loadProducts();
@@ -1131,10 +1150,11 @@ function renderReview() {
     <!-- 리뷰 CSV 업로드 -->
     <div style="max-width:600px;margin:32px auto 0">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;margin-bottom:16px">
-        <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px;font-weight:700">STEP 1 · 리뷰 데이터 업로드</div>
+        <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px;font-weight:700">STEP 1 · 리뷰 원본 CSV 업로드</div>
         <div style="font-size:.83rem;color:var(--muted);margin-bottom:16px;line-height:1.7">
-          크롤러로 추출한 <strong style="color:#fff">${prod.name}</strong> 전용 리뷰 CSV를 업로드하세요.<br>
-          <span style="font-size:.75rem">필요 컬럼: 리뷰어명, 평점, 리뷰텍스트, 리뷰날짜</span>
+          쿠팡·네이버 등 크롤링한 <strong style="color:#fff">실제 구매자 리뷰 CSV</strong>를 업로드하세요.<br>
+          <span style="font-size:.75rem;color:rgba(107,197,255,.8)">⚠️ 개요 분석용 페르소나 CSV와 <strong>다른 파일</strong>입니다 — 우측 상단 ⭐ 버튼으로도 업로드 가능</span><br>
+          <span style="font-size:.73rem">필요 컬럼: 사용자ID(또는 리뷰어명), 별점, 리뷰내용(또는 리뷰텍스트), 날짜</span>
         </div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <label style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-size:.82rem;color:var(--muted);cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:7px" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
@@ -1150,7 +1170,8 @@ function renderReview() {
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;text-align:center">
         <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px;font-weight:700">STEP 2 · AI 분석 실행</div>
         <div style="font-size:.83rem;color:var(--muted);line-height:1.7;margin-bottom:8px">
-          분석 결과는 DB에 저장되어 <strong style="color:#fff">다음 접속자는 즉시 확인</strong> 가능합니다.
+          Gemini AI가 리뷰를 배치로 분석해 <strong style="color:#fff">구매이유 · 긍정/부정 키워드 · 설치장소</strong>를 추출합니다.<br>
+          분석 완료 후 <strong style="color:var(--accent)">마케팅·상품기획·제품비교 탭</strong>에도 자동 반영됩니다.
         </div>
         <div style="font-size:.74rem;color:var(--muted);margin-bottom:20px;padding:7px 14px;background:var(--surface2);border-radius:7px;display:inline-block">
           ⏱ 분석 소요시간: 약 1~3분
@@ -1168,18 +1189,36 @@ function renderReview() {
     </div>`;
 }
 
-// 리뷰 CSV 업로드 처리
+// ═══════════════════════ 리뷰 CSV 업로드 ═══════════════════════
+// 헤더 버튼용 - 업로드 후 리뷰 인사이트 탭으로 자동 이동
+async function handleReviewCSVHeader(event) {
+  await handleReviewCSV(event, true);
+  const reviewTabBtn = document.querySelector('nav .tab-btn:nth-child(2)');
+  if (reviewTabBtn) switchTab('review', reviewTabBtn);
+}
+
+// 리뷰 CSV 업로드 처리 (헤더 & 탭 내부 공용)
 let reviewRawData = [];
-async function handleReviewCSV(event) {
+async function handleReviewCSV(event, fromHeader = false) {
   const file = event.target.files[0];
   if (!file) return;
-  const status = document.getElementById('rv-csv-status');
-  const preview = document.getElementById('rv-csv-preview');
-  status.textContent = '파일 읽는 중...';
+
+  // 현재 제품 체크
+  if (!currentProductId) {
+    showToast('⚠️ 먼저 페르소나 CSV를 업로드해 제품을 등록해주세요.', 'error');
+    return;
+  }
+
+  const statusEl = document.getElementById('rv-csv-status');
+  const previewEl = document.getElementById('rv-csv-preview');
+  if (statusEl) statusEl.textContent = '파일 읽는 중...';
+  showToast('리뷰 CSV 읽는 중...', 'success');
 
   const text = await file.text();
   const bom = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
   const lines = bom.trim().split('\n').filter(l => l.trim());
+  if (lines.length < 2) { showToast('리뷰 데이터가 없습니다.', 'error'); return; }
+
   const headers = parseCSVLine(lines[0]).map(h => h.trim());
   const rows = lines.slice(1).map(l => {
     const vals = parseCSVLine(l);
@@ -1189,10 +1228,17 @@ async function handleReviewCSV(event) {
   }).filter(r => Object.values(r).some(v => v));
 
   reviewRawData = rows;
-  status.innerHTML = `<span style="color:var(--accent);font-weight:700">${rows.length}개 리뷰 로드됨</span>`;
 
-  const colBadges = headers.map(h => `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:.7rem;color:var(--muted)">${h}</span>`).join(' ');
-  preview.innerHTML = `<div style="font-size:.72rem;color:var(--muted);margin-bottom:6px">감지된 컬럼:</div><div style="display:flex;flex-wrap:wrap;gap:4px">${colBadges}</div>`;
+  // 탭 내부 상태 업데이트
+  if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent3);font-weight:700">${rows.length}개 리뷰 로드됨</span>`;
+  if (previewEl) {
+    const colBadges = headers.map(h => `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:.7rem;color:var(--muted)">${h}</span>`).join(' ');
+    previewEl.innerHTML = `<div style="font-size:.72rem;color:var(--muted);margin-bottom:6px">감지된 컬럼:</div><div style="display:flex;flex-wrap:wrap;gap:4px">${colBadges}</div>`;
+  }
+
+  // 헤더 상태 업데이트
+  const rs = document.getElementById('review-upload-status');
+  if (rs) { rs.textContent = `✅ ${file.name.replace('.csv','')} · ${rows.length}건`; rs.style.color = 'var(--accent3)'; }
 
   // 메모리에 저장
   const prod = allProducts.find(p => p.id === currentProductId);
@@ -1208,8 +1254,11 @@ async function handleReviewCSV(event) {
     review_date:   r['리뷰날짜'] || r['review_date'] || r['날짜'] || '',
   })).filter(r => r.review_text);
   memDB.review_raw.push(...insertRows);
-  showToast(`✅ ${insertRows.length}개 리뷰 저장 완료`, 'success');
+
+  showToast(`✅ 리뷰 ${insertRows.length}건 로드 완료 — AI 분석 시작하기를 눌러주세요.`, 'success');
+  event.target.value = '';
 }
+
 
 // 중지 플래그
 let analysisAborted = false;
