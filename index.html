@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Persona Intelligence Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=DM+Serif+Display:ital@0;1&family=Cormorant+Garamond:ital,wght@1,300;1,400&display=swap" rel="stylesheet">
-<!-- Supabase 제거됨 - 메모리 기반으로 전환 -->
+<!-- Supabase JS SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#0a0a0f;--surface:#13131a;--surface2:#1c1c27;--border:#2a2a3a;--accent:#c8ff00;--accent2:#ff6b6b;--accent3:#6bc5ff;--purple:#b06bff;--orange:#ffb06b;--text:#e8e8f0;--muted:#7a7a9a;}
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -418,60 +419,15 @@ async function callAI(prompt, max_tokens = 1000) {
   }
 }
 
-// ═══════════════════════ 메모리 DB (Supabase 대체) ═══════════════════════
-// 모든 데이터를 브라우저 메모리에 보관
-const memDB = {
-  products: [],       // [{id, name, category, created_at}]
-  personas: [],       // [{id, product_id, ...페르소나 필드}]
-  review_raw: [],     // [{id, product_id, reviewer_name, rating, review_text, review_date}]
-  review_insights: [] // [{id, product_id, purchase_reasons, install_locations, positive_top5, negative_top5, summary, analyzed_at, review_count}]
-};
-let _autoId = 1;
-const nextId = () => _autoId++;
+// ═══════════════════════ Supabase 연결 ═══════════════════════
+const SUPABASE_URL = 'https://zaczlobfbshsvmahfzjv.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphY3psb2JmYnNoc3ZtYWhmemp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2NDY5MDgsImV4cCI6MjA4NzIyMjkwOH0.4UoDAy4vPw2FPI9UV5uztSlya060HJw57By53SBA-sM';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Supabase 호환 인터페이스 (기존 코드 최소 수정용)
-const sb = {
-  from: (table) => ({
-    select: (cols) => ({
-      order: (col, opt) => ({ data: [...memDB[table]], error: null }),
-      eq: (col, val) => ({
-        order: (c, o) => ({ data: memDB[table].filter(r => r[col] === val), error: null }),
-        limit: (n) => ({ data: memDB[table].filter(r => r[col] === val).slice(0, n), error: null }),
-        single: () => { const d = memDB[table].find(r => r[col] === val); return { data: d||null, error: d?null:'not found' }; },
-        data: memDB[table].filter(r => r[col] === val), error: null
-      }),
-      limit: (n) => ({ data: memDB[table].slice(0, n), error: null }),
-      data: [...memDB[table]], error: null
-    }),
-    insert: async (rows) => {
-      const arr = Array.isArray(rows) ? rows : [rows];
-      arr.forEach(r => { r.id = r.id || nextId(); memDB[table].push(r); });
-      return { data: arr, error: null };
-    },
-    upsert: async (row, opts) => {
-      const conflictKey = opts?.onConflict;
-      if (conflictKey) {
-        const idx = memDB[table].findIndex(r => r[conflictKey] === row[conflictKey]);
-        if (idx >= 0) { memDB[table][idx] = { ...memDB[table][idx], ...row }; }
-        else { row.id = row.id || nextId(); memDB[table].push(row); }
-      } else {
-        row.id = row.id || nextId(); memDB[table].push(row);
-      }
-      return { data: row, error: null };
-    },
-    delete: () => ({
-      eq: (col, val) => {
-        memDB[table] = memDB[table].filter(r => r[col] !== val);
-        return { data: null, error: null };
-      }
-    }),
-    // select().eq() 체인을 async/await로 쓰는 경우 대응
-    eq: (col, val) => ({
-      select: (c) => ({ data: memDB[table].filter(r => r[col] === val), error: null }),
-      limit: (n) => ({ data: memDB[table].filter(r => r[col] === val).slice(0,n), error: null }),
-    }),
-  }),
-};
+// memDB는 페이지 세션 내 캐시용으로만 사용 (DB 로드 후 채워짐)
+const memDB = { products: [], personas: [], review_raw: [], review_insights: [] };
+let _autoId = Date.now();
+const nextId = () => String(++_autoId);
 
 // ═══════════════════════ STATE ═══════════════════════
 let allProducts = [];      // [{id, name, category}]
@@ -489,7 +445,10 @@ window.addEventListener('load', () => {
 });
 
 function loadProducts() {
-  allProducts = [...memDB.products];
+  const { data: prods, error: pe } = await sb.from('products').select('*').order('created_at', {ascending: false});
+  if (pe) { console.error('products load error', pe); }
+  allProducts = prods || [];
+  memDB.products = allProducts;
   const sel = document.getElementById('product-select');
   sel.innerHTML = allProducts.length === 0
     ? '<option value="">— 등록된 제품 없음 —</option>'
@@ -515,8 +474,8 @@ function loadProductData(productId) {
   document.getElementById('tab-overview').innerHTML = `<div class="page-loading"><div class="dots"><span></span><span></span><span></span></div><div class="loading-text">데이터 로딩 중...</div></div>`;
 
   // 메모리에서 직접 조회
-  const personas = memDB.personas.filter(p => p.product_id === productId).sort((a,b) => a.id - b.id);
-  const insights = memDB.review_insights.filter(r => r.product_id === productId);
+  const { data: personas } = await sb.from('personas').select('*').eq('product_id', productId).order('created_at', {ascending: true});
+  const { data: insights } = await sb.from('review_insights').select('*').eq('product_id', productId);
 
   currentPersonas = personas.map((p, i) => ({
     ...p,
@@ -585,16 +544,17 @@ async function handleCSVUpload(event) {
 
   showToast(`"${productName}" 저장 중...`, 'success');
 
-  // 메모리에 제품 upsert
-  let prod = memDB.products.find(p => p.name === productName);
-  if (!prod) {
-    prod = { id: nextId(), name: productName, category: productCategory, created_at: new Date().toISOString() };
-    memDB.products.push(prod);
-  }
+  // Supabase에 제품 upsert
+  const { data: upserted, error: upe } = await sb.from('products').upsert(
+    { name: productName, category: productCategory },
+    { onConflict: 'name' }
+  ).select().single();
+  if (upe) { showToast('제품 저장 실패: ' + upe.message, 'error'); return; }
+  const prod = upserted;
   const productId = prod.id;
 
-  // 기존 페르소나 삭제 후 재삽입
-  memDB.personas = memDB.personas.filter(p => p.product_id !== productId);
+  // 기존 페르소나 삭제
+  await sb.from('personas').delete().eq('product_id', productId);
 
   const personaRows = rows.map(r => {
     // ── D1 생애주기 → children (있음/없음 정규화)
@@ -674,8 +634,12 @@ async function handleCSVUpload(event) {
     };
   });
 
-  // 메모리에 페르소나 저장
-  personaRows.forEach(r => { r.id = nextId(); memDB.personas.push(r); });
+  // Supabase에 페르소나 저장 (배치)
+  const BATCH = 50;
+  for (let i = 0; i < personaRows.length; i += BATCH) {
+    const { error: ie } = await sb.from('personas').insert(personaRows.slice(i, i + BATCH));
+    if (ie) { showToast('페르소나 저장 오류: ' + ie.message, 'error'); return; }
+  }
 
   showToast(`✅ "${productName}" ${rows.length}명 업로드 완료!`, 'success');
 
@@ -1253,9 +1217,9 @@ async function handleReviewCSV(event, fromHeader = false) {
   // 메모리에 저장
   const prod = allProducts.find(p => p.id === currentProductId);
   if (!prod) return;
-  memDB.review_raw = memDB.review_raw.filter(r => r.product_id !== currentProductId);
+  // Supabase - 기존 리뷰 삭제 후 재저장
+  await sb.from('review_raw').delete().eq('product_id', currentProductId);
   const insertRows = rows.map(r => ({
-    id: nextId(),
     product_id:    currentProductId,
     product_name:  prod.name,
     reviewer_name: r['리뷰어명'] || r['reviewer_name'] || r['프로필_이름'] || r['사용자ID'] || '',
@@ -1263,7 +1227,11 @@ async function handleReviewCSV(event, fromHeader = false) {
     review_text:   r['리뷰텍스트'] || r['review_text'] || r['전체_리뷰_통합'] || r['리뷰내용'] || '',
     review_date:   r['리뷰날짜'] || r['review_date'] || r['날짜'] || '',
   })).filter(r => r.review_text);
-  memDB.review_raw.push(...insertRows);
+  const RBATCH = 100;
+  for (let i = 0; i < insertRows.length; i += RBATCH) {
+    await sb.from('review_raw').insert(insertRows.slice(i, i + RBATCH));
+  }
+  memDB.review_raw = insertRows;
 
   showToast(`✅ 리뷰 ${insertRows.length}건 로드 완료 — AI 분석 시작하기를 눌러주세요.`, 'success');
   event.target.value = '';
@@ -1395,7 +1363,7 @@ async function confirmReAnalyze() {
   const err = document.getElementById('reanalyze-err');
   if (pw !== ADMIN_PW) { err.textContent = '❌ 비밀번호가 틀렸습니다.'; return; }
   closeReAnalyzeModal();
-  memDB.review_insights = memDB.review_insights.filter(r => r.product_id !== currentProductId);
+  await sb.from('review_insights').delete().eq('product_id', currentProductId);
   currentInsight = null;
   document.getElementById('idea-grid').innerHTML = '';
   document.getElementById('product-grid').innerHTML = '';
@@ -1432,9 +1400,9 @@ async function runReviewAnalysis() {
 
   if (analysisAborted) { addLog('⏹ 분석이 중지되었습니다.'); btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none'; return; }
 
-  // 2) 리뷰 데이터 소스 결정 (메모리에서 조회)
+  // 2) 리뷰 데이터 소스 결정 (Supabase에서 조회)
   let reviewSamples = [];
-  const rawRows = memDB.review_raw.filter(r => r.product_id === currentProductId).slice(0, 200);
+  const { data: rawRows } = await sb.from('review_raw').select('*').eq('product_id', currentProductId).limit(200);
 
   if (rawRows && rawRows.length > 0) {
     addLog(`📋 리뷰 전용 CSV 데이터 ${rawRows.length}개 사용`);
@@ -1532,8 +1500,9 @@ ${batches[bi].join('\n---\n')}
     review_count:     reviewSamples.length,
     is_cached:        true
   };
-  memDB.review_insights = memDB.review_insights.filter(r => r.product_id !== currentProductId);
-  memDB.review_insights.push(saveData);
+  // Supabase에 저장
+  const { error: sie } = await sb.from('review_insights').delete().eq('product_id', currentProductId);
+  await sb.from('review_insights').insert(saveData);
 
   addLog('✅ 저장 완료! 마케팅/상품기획/제품비교 탭에 리뷰 인사이트가 반영됩니다.');
   showToast('✅ 리뷰 인사이트 분석 완료!', 'success');
@@ -1547,8 +1516,8 @@ ${batches[bi].join('\n---\n')}
   setTimeout(() => renderReviewData(currentInsight, prod), 500);
 }
 
-function reAnalyze() {
-  memDB.review_insights = memDB.review_insights.filter(r => r.product_id !== currentProductId);
+async function reAnalyze() {
+  await sb.from('review_insights').delete().eq('product_id', currentProductId);
   currentInsight = null;
   document.getElementById('idea-grid').innerHTML = '';
   document.getElementById('product-grid').innerHTML = '';
@@ -1779,10 +1748,12 @@ async function runCompare() {
   out.innerHTML = `<div class="page-loading"><div class="dots"><span></span><span></span><span></span></div><div class="loading-text">두 제품 데이터 비교 중...</div></div>`;
 
   // 메모리에서 직접 조회
-  const psA = memDB.personas.filter(p => p.product_id === idA);
-  const psB = memDB.personas.filter(p => p.product_id === idB);
-  const insA = memDB.review_insights.filter(r => r.product_id === idA);
-  const insB = memDB.review_insights.filter(r => r.product_id === idB);
+  const [{ data: psA }, { data: psB }, { data: insA }, { data: insB }] = await Promise.all([
+    sb.from('personas').select('*').eq('product_id', idA),
+    sb.from('personas').select('*').eq('product_id', idB),
+    sb.from('review_insights').select('*').eq('product_id', idA),
+    sb.from('review_insights').select('*').eq('product_id', idB),
+  ]);
 
   const prodA = allProducts.find(p=>p.id===idA);
   const prodB = allProducts.find(p=>p.id===idB);
@@ -2143,8 +2114,10 @@ async function runCmpFocus(idA, idB) {
   btn.disabled = true; btn.textContent = '응답 생성 중...';
 
   // 메모리에서 직접 조회
-  const psA = memDB.personas.filter(p => p.product_id === idA);
-  const psB = memDB.personas.filter(p => p.product_id === idB);
+  const [{ data: psA }, { data: psB }] = await Promise.all([
+    sb.from('personas').select('*').eq('product_id', idA),
+    sb.from('personas').select('*').eq('product_id', idB),
+  ]);
   const pA = psA.map((p,i)=>({...p,color:PERSONA_COLORS[i%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[i%PERSONA_EMOJIS.length],_prod:'a'}));
   const pB = psB.map((p,i)=>({...p,color:PERSONA_COLORS[(i+3)%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[(i+3)%PERSONA_EMOJIS.length],_prod:'b'}));
 
