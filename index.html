@@ -285,19 +285,29 @@ nav::-webkit-scrollbar{height:0;}
 
     <!-- ① 페르소나 CSV 업로드 -->
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-      <label class="upload-btn" id="persona-upload-btn">
-        👤 페르소나 CSV
-        <input type="file" accept=".csv" id="csv-file-input" onchange="handleCSVUpload(event)">
-      </label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span id="persona-file-preview" style="font-size:.68rem;color:var(--accent);display:none;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(200,255,0,.08);border:1px solid rgba(200,255,0,.2);border-radius:5px;padding:2px 7px"></span>
+        <button id="persona-confirm-btn" onclick="confirmPersonaUpload()" style="display:none;font-size:.68rem;font-weight:700;background:var(--accent);color:#000;border:none;border-radius:5px;padding:3px 10px;cursor:pointer">✓ 업로드</button>
+        <button id="persona-cancel-btn" onclick="cancelPersonaUpload()" style="display:none;font-size:.68rem;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer">✕</button>
+        <label class="upload-btn" id="persona-upload-btn">
+          👤 페르소나 CSV
+          <input type="file" accept=".csv" id="csv-file-input" onchange="previewPersonaFile(event)">
+        </label>
+      </div>
       <span id="persona-upload-status" style="font-size:.62rem;color:var(--muted);padding-right:2px">개요·페르소나 분석용</span>
     </div>
 
     <!-- ② 리뷰 CSV 업로드 -->
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-      <label class="upload-btn" id="review-upload-btn" style="border-color:rgba(107,197,255,.35);color:var(--accent3)">
-        ⭐ 리뷰 CSV
-        <input type="file" accept=".csv" id="review-file-input-header" onchange="handleReviewCSVHeader(event)">
-      </label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span id="review-file-preview" style="font-size:.68rem;color:var(--accent3);display:none;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(107,197,255,.08);border:1px solid rgba(107,197,255,.2);border-radius:5px;padding:2px 7px"></span>
+        <button id="review-confirm-btn" onclick="confirmReviewUpload()" style="display:none;font-size:.68rem;font-weight:700;background:var(--accent3);color:#000;border:none;border-radius:5px;padding:3px 10px;cursor:pointer">✓ 업로드</button>
+        <button id="review-cancel-btn" onclick="cancelReviewUpload()" style="display:none;font-size:.68rem;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer">✕</button>
+        <label class="upload-btn" id="review-upload-btn" style="border-color:rgba(107,197,255,.35);color:var(--accent3)">
+          ⭐ 리뷰 CSV
+          <input type="file" accept=".csv" id="review-file-input-header" onchange="previewReviewFile(event)">
+        </label>
+      </div>
       <span id="review-upload-status" style="font-size:.62rem;color:var(--muted);padding-right:2px">리뷰 인사이트 분석용</span>
     </div>
   </div>
@@ -518,6 +528,86 @@ function showEmptyState() {
 }
 
 // ═══════════════════════ CSV 업로드 (페르소나) ═══════════════════════
+// ── 페르소나 CSV: 2단계 업로드 (선택 → 미리보기 → 확인)
+let _pendingPersonaEvent = null;
+let _pendingReviewEvent  = null;
+
+function previewPersonaFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  _pendingPersonaEvent = event;
+  const preview = document.getElementById('persona-file-preview');
+  const confirmBtn = document.getElementById('persona-confirm-btn');
+  const cancelBtn  = document.getElementById('persona-cancel-btn');
+  const uploadBtn  = document.getElementById('persona-upload-btn');
+  preview.textContent = '📄 ' + file.name;
+  preview.style.display = 'inline-block';
+  confirmBtn.style.display = 'inline-block';
+  cancelBtn.style.display  = 'inline-block';
+  uploadBtn.style.opacity  = '0.5';
+  const ps = document.getElementById('persona-upload-status');
+  if (ps) { ps.textContent = '파일 선택됨 — 업로드 버튼을 눌러 확정하세요'; ps.style.color = '#fbbf24'; }
+}
+
+function cancelPersonaUpload() {
+  _pendingPersonaEvent = null;
+  document.getElementById('persona-file-preview').style.display = 'none';
+  document.getElementById('persona-confirm-btn').style.display  = 'none';
+  document.getElementById('persona-cancel-btn').style.display   = 'none';
+  document.getElementById('persona-upload-btn').style.opacity   = '1';
+  document.getElementById('csv-file-input').value = '';
+  const ps = document.getElementById('persona-upload-status');
+  if (ps) { ps.textContent = '개요·페르소나 분석용'; ps.style.color = 'var(--muted)'; }
+}
+
+async function confirmPersonaUpload() {
+  if (!_pendingPersonaEvent) return;
+  document.getElementById('persona-file-preview').style.display = 'none';
+  document.getElementById('persona-confirm-btn').style.display  = 'none';
+  document.getElementById('persona-cancel-btn').style.display   = 'none';
+  document.getElementById('persona-upload-btn').style.opacity   = '1';
+  await handleCSVUpload(_pendingPersonaEvent);
+  _pendingPersonaEvent = null;
+}
+
+function previewReviewFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  _pendingReviewEvent = event;
+  const preview    = document.getElementById('review-file-preview');
+  const confirmBtn = document.getElementById('review-confirm-btn');
+  const cancelBtn  = document.getElementById('review-cancel-btn');
+  const uploadBtn  = document.getElementById('review-upload-btn');
+  preview.textContent = '📄 ' + file.name;
+  preview.style.display = 'inline-block';
+  confirmBtn.style.display = 'inline-block';
+  cancelBtn.style.display  = 'inline-block';
+  uploadBtn.style.opacity  = '0.5';
+  const rs = document.getElementById('review-upload-status');
+  if (rs) { rs.textContent = '파일 선택됨 — 업로드 버튼을 눌러 확정하세요'; rs.style.color = '#fbbf24'; }
+}
+
+function cancelReviewUpload() {
+  _pendingReviewEvent = null;
+  document.getElementById('review-file-preview').style.display = 'none';
+  document.getElementById('review-confirm-btn').style.display  = 'none';
+  document.getElementById('review-cancel-btn').style.display   = 'none';
+  document.getElementById('review-upload-btn').style.opacity   = '1';
+  document.getElementById('review-file-input-header').value = '';
+  const rs = document.getElementById('review-upload-status');
+  if (rs) { rs.textContent = '리뷰 인사이트 분석용'; rs.style.color = 'var(--muted)'; }
+}
+
+async function confirmReviewUpload() {
+  if (!_pendingReviewEvent) return;
+  document.getElementById('review-file-preview').style.display = 'none';
+  document.getElementById('review-confirm-btn').style.display  = 'none';
+  document.getElementById('review-cancel-btn').style.display   = 'none';
+  document.getElementById('review-upload-btn').style.opacity   = '1';
+  await handleReviewCSV(_pendingReviewEvent, true);
+  _pendingReviewEvent = null;
+}
+
 async function handleCSVUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -657,9 +747,10 @@ async function handleCSVUpload(event) {
   if (ps) { ps.textContent = `✅ ${productName} · ${rows.length}명`; ps.style.color = 'var(--accent)'; }
 
   // 제품 목록 새로고침 후 해당 제품으로 전환
-  loadProducts();
-  document.getElementById('product-select').value = productId;
+  await loadProducts();
+  // loadProducts가 첫 제품을 자동 로드하므로, 업로드한 제품으로 강제 전환
   currentProductId = productId;
+  document.getElementById('product-select').value = productId;
   await loadProductData(productId);
 
   event.target.value = '';
@@ -1384,10 +1475,18 @@ async function runReviewAnalysis() {
   const btn     = document.getElementById('ai-analyze-btn');
   const stopBtn = document.getElementById('ai-stop-btn');
   const log     = document.getElementById('analyze-log');
-  const prod    = allProducts.find(p => p.id === currentProductId);
+  let prod = allProducts.find(p => p.id === currentProductId);
+  // allProducts에 없으면 Supabase에서 직접 조회
+  if (!prod && currentProductId) {
+    const { data: freshProd } = await sb.from('products').select('*').eq('id', currentProductId).single();
+    if (freshProd) { prod = freshProd; allProducts.push(freshProd); }
+  }
   const prodName = prod?.name || '';
 
-  if (!prodName) { showToast('제품명을 확인할 수 없습니다.', 'error'); return; }
+  if (!prodName) { 
+    showToast('제품명을 확인할 수 없습니다. 제품 드롭다운에서 삼성 제품을 선택했는지 확인해주세요.', 'error'); 
+    return; 
+  }
 
   analysisAborted = false;
   btn.disabled = true; btn.textContent = '🔄 분석 중...';
