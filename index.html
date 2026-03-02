@@ -444,7 +444,7 @@ window.addEventListener('load', () => {
   loadProducts();
 });
 
-function loadProducts() {
+async function loadProducts() {
   const { data: prods, error: pe } = await sb.from('products').select('*').order('created_at', {ascending: false});
   if (pe) { console.error('products load error', pe); }
   allProducts = prods || [];
@@ -464,25 +464,25 @@ function loadProducts() {
   if (allProducts.length > 0) {
     currentProductId = allProducts[0].id;
     sel.value = currentProductId;
-    loadProductData(currentProductId);
+    await loadProductData(currentProductId);
   } else {
     showEmptyState();
   }
 }
 
-function loadProductData(productId) {
+async function loadProductData(productId) {
   document.getElementById('tab-overview').innerHTML = `<div class="page-loading"><div class="dots"><span></span><span></span><span></span></div><div class="loading-text">데이터 로딩 중...</div></div>`;
 
   // 메모리에서 직접 조회
   const { data: personas } = await sb.from('personas').select('*').eq('product_id', productId).order('created_at', {ascending: true});
   const { data: insights } = await sb.from('review_insights').select('*').eq('product_id', productId);
 
-  currentPersonas = personas.map((p, i) => ({
+  currentPersonas = (personas || []).map((p, i) => ({
     ...p,
     color: PERSONA_COLORS[i % PERSONA_COLORS.length],
     emoji: PERSONA_EMOJIS[i % PERSONA_EMOJIS.length]
   }));
-  currentInsight = insights[0] || null;
+  currentInsight = (insights || [])[0] || null;
 
   // 탭 리셋
   document.getElementById('cards-grid').innerHTML = '';
@@ -502,10 +502,10 @@ function loadProductData(productId) {
   if (activeTab === 'tab-marketing') renderMarketing();
 }
 
-function onProductChange() {
+async function onProductChange() {
   const sel = document.getElementById('product-select');
-  currentProductId = parseInt(sel.value);
-  loadProductData(currentProductId);
+  currentProductId = sel.value;
+  await loadProductData(currentProductId);
 }
 
 function showEmptyState() {
@@ -548,9 +548,9 @@ async function handleCSVUpload(event) {
   const { data: upserted, error: upe } = await sb.from('products').upsert(
     { name: productName, category: productCategory },
     { onConflict: 'name' }
-  ).select().single();
-  if (upe) { showToast('제품 저장 실패: ' + upe.message, 'error'); return; }
-  const prod = upserted;
+  ).select();
+  if (upe || !upserted || !upserted[0]) { showToast('제품 저장 실패: ' + (upe?.message||'unknown'), 'error'); return; }
+  const prod = upserted[0];
   const productId = prod.id;
 
   // 기존 페르소나 삭제
@@ -651,7 +651,7 @@ async function handleCSVUpload(event) {
   loadProducts();
   document.getElementById('product-select').value = productId;
   currentProductId = productId;
-  loadProductData(productId);
+  await loadProductData(productId);
 
   event.target.value = '';
 }
