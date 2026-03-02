@@ -765,17 +765,22 @@ function renderOverview() {
   const incomeMap     = countMap(ps, p => (p.income||'').substring(0,4).trim());
   const incomeEntries = topN(incomeMap,4);
   const topIncome     = incomeEntries[0]?.[0] || '-';
-  const married        = ps.filter(p=>(p.married||'').includes('기혼')).length;
-  const marriedUnknown = ps.filter(p=>{const m=(p.married||'').trim();return !m||m==='미상'||m==='판별불가';}).length;
-  const marriedSingle  = total - married - marriedUnknown;
-  // 자녀/생애주기: children 컬럼(D1_생애주기 정규화값) 단일 기준
-  const childrenYes    = ps.filter(p=>(p.children||'').includes('있음')).length;
+  // ── 기혼/미혼: 유초등·영유아·임산부 생애주기 키워드가 있으면 기혼으로 간주
+  const MARRIED_LC_KW = ['유초등','영유아','임산부','신생아','다자녀'];
+  const lcHasMarried  = p => MARRIED_LC_KW.some(kw => (p.children_detail||p.children||'').includes(kw));
+  const married        = ps.filter(p => (p.married||'').includes('기혼') || lcHasMarried(p)).length;
+  const marriedSingle  = ps.filter(p => !(p.married||'').includes('기혼') && !lcHasMarried(p) && ((p.married||'').includes('미혼') || (p.children||'').includes('없음'))).length;
+  const marriedUnknown = total - married - marriedSingle;
+  // 자녀/생애주기
+  const childrenYes    = ps.filter(p=>(p.children||'').includes('있음') || lcHasMarried(p)).length;
   const childrenNone   = ps.filter(p=>(p.children||'').includes('없음')).length;
   const childrenUnknown= total - childrenYes - childrenNone;
-  const marriedNoChild = ps.filter(p=>(p.married||'').includes('기혼')&&!(p.children||'').includes('있음')).length;
-  const single         = marriedSingle; // 결혼여부 기준 미혼
-  const petYes        = ps.filter(p=>(p.pet||'').includes('있음')).length;
-  const petNone       = ps.filter(p=>(p.pet||'').includes('없음')).length;
+  const single         = marriedSingle;
+  // ── D2 반려동물: 종류별 합산으로 있음/없음 재계산
+  const PET_TYPE_KW = ['반려견','강아지','반려묘','고양이','소동물','다견','다묘','햄스터','토끼','새','물고기'];
+  const petFromDetail  = p => PET_TYPE_KW.some(kw => (p.pet_detail||'').includes(kw));
+  const petYes        = ps.filter(p => (p.pet||'').includes('있음') || petFromDetail(p)).length;
+  const petNone       = ps.filter(p => (p.pet||'').includes('없음') && !petFromDetail(p)).length;
   const petUnknown    = total - petYes - petNone;
   const avgReviews    = Math.round(ps.reduce((s,p)=>s+(parseInt(p.total_reviews)||0),0)/total*10)/10;
   const avgRating     = (ps.reduce((s,p)=>s+(parseFloat(p.avg_rating)||0),0)/total).toFixed(1);
@@ -933,12 +938,13 @@ function renderOverview() {
         })()}
 
         <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
-          <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">결혼여부 (D1_결혼여부 기준 · 별도)</div>
+          <div style="font-size:.64rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">결혼여부 추정 (생애주기 기반)</div>
           ${ratioBars([
             ['기혼', pct(married), '#22c55e'],
             ['미혼', pct(marriedSingle), 'var(--accent3)'],
             ['미상', pct(marriedUnknown), 'var(--muted)'],
           ])}
+          <div style="font-size:.65rem;color:var(--muted);margin-top:6px;line-height:1.5">유초등·영유아·임산부 = 기혼으로 분류</div>
         </div>
 
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
@@ -949,15 +955,16 @@ function renderOverview() {
       <!-- D2 반려동물 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #22c55e;border-radius:12px;padding:18px">
         <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:4px;font-weight:700">D2 · 반려동물</div>
-        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">보유 현황 · 종류</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">보유 현황 (종류별 합산 기준)</div>
         ${ratioBars([
-          ['있음',pct(petYes),'#22c55e'],
-          ['없음',pct(petNone),'var(--muted)'],
-          ['추정불가',pct(petUnknown),'var(--border)'],
+          ['있음', pct(petYes), '#22c55e'],
+          ['없음', pct(petNone), 'var(--muted)'],
+          ['추정불가', pct(petUnknown), 'var(--border)'],
         ])}
         ${petDetailEntries.length ? `
-        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">반려동물 종류</div>
-        ${ratioBars(petDetailEntries.map(([k,v])=>[k,pct(v),'#22c55e']))}` : ''}
+        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">종류별 비율 (전체 모수 기준)</div>
+        ${ratioBars(petDetailEntries.map(([k,v])=>[k,pct(v),'#22c55e']))}
+        <div style="font-size:.62rem;color:var(--muted);margin-top:4px;line-height:1.4">※ 복수 반려동물 보유 시 중복 집계 — 합계가 있음% 초과 가능</div>` : ''}
         <div style="margin-top:10px;font-size:.71rem;color:var(--muted);padding:7px 10px;background:rgba(34,197,94,.05);border-radius:6px;line-height:1.6">
           ${petYes>total*0.3?'반려동물 보유 '+pct(petYes)+'% — 펫 케어 크로스셀 기회':petYes>total*0.15?'반려동물 보유 '+pct(petYes)+'% — 틈새 타겟 가능':'반려동물 보유 낮음 — 관련 마케팅 우선순위 낮음'}
         </div>
@@ -983,7 +990,10 @@ function renderOverview() {
               <span style="font-size:.65rem;color:var(--muted);width:16px">#${i+1}</span>
               <span style="font-size:.79rem">${k}</span>
             </div>
-            <span style="font-size:.68rem;background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.2);border-radius:8px;padding:2px 8px;color:var(--accent2);font-weight:700;flex-shrink:0">${v}명</span>
+            <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+              <span style="font-size:.67rem;color:var(--muted)">${pct(v)}%</span>
+              <span style="font-size:.68rem;background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.2);border-radius:8px;padding:2px 8px;color:var(--accent2);font-weight:700">${v}명</span>
+            </div>
           </div>`).join('')}
       </div>
     </div>
@@ -992,26 +1002,23 @@ function renderOverview() {
     ${divider('#fbbf24','🟡','2단계 — 높은 추론 (D4·D5·D8)','구매 패턴·데이터 교차 분석으로 도출 · 신뢰도 중-상')}
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px">
 
-      <!-- D9 연령대 + 결혼여부 -->
+      <!-- D9 연령대 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
         <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:4px;font-weight:700">D9 · 연령대 추정</div>
-        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">& 결혼여부 (D1)</div>
-        ${ratioBars(ageEntries.slice(0,4).map(([k,v])=>[k,pct(v),'#fbbf24']))}
-        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">결혼여부 (합계 100%)</div>
-        ${ratioBars([
-          ['기혼', pct(married), 'var(--purple)'],
-          ['미혼', pct(marriedSingle), 'var(--accent3)'],
-          ['미상', pct(marriedUnknown), 'var(--muted)'],
-        ])}
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">주 연령대 분포</div>
+        ${ratioBars(ageEntries.slice(0,5).map(([k,v])=>[k,pct(v),'#fbbf24']))}
       </div>
 
       <!-- D5 소비가치관 + 쇼핑결정요인 -->
       <div style="background:var(--surface);border:1px solid var(--border);border-top:2px solid #fbbf24;border-radius:12px;padding:18px">
         <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:#fbbf24;margin-bottom:4px;font-weight:700">D5 · 소비 가치관</div>
-        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">& 쇼핑 결정 요인</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">평소 소비 시 중시하는 가치 철학</div>
         ${ratioBars(consumeEntries.map(([k,v])=>[k,pct(v),'#fbbf24']))}
-        <div style="font-size:.64rem;color:var(--muted);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.5px">쇼핑 결정 요인</div>
-        ${ratioBars(shopEntries.slice(0,4).map(([k,v])=>[k,pct(v),'var(--orange)']))}
+        <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+          <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--orange);margin-bottom:4px;font-weight:700">쇼핑 결정 요인</div>
+          <div style="font-size:.68rem;color:var(--muted);margin-bottom:8px">구매 버튼을 누를 때 최종 결정 요소</div>
+          ${ratioBars(shopEntries.slice(0,4).map(([k,v])=>[k,pct(v),'var(--orange)']))}
+        </div>
       </div>
 
       <!-- D8 지불의향 -->
