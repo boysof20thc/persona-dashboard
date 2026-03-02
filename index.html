@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Persona Intelligence Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=DM+Serif+Display:ital@0;1&family=Cormorant+Garamond:ital,wght@1,300;1,400&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Supabase 제거됨 - 메모리 기반으로 전환 -->
 <style>
 :root{--bg:#0a0a0f;--surface:#13131a;--surface2:#1c1c27;--border:#2a2a3a;--accent:#c8ff00;--accent2:#ff6b6b;--accent3:#6bc5ff;--purple:#b06bff;--orange:#ffb06b;--text:#e8e8f0;--muted:#7a7a9a;}
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -383,20 +383,86 @@ nav::-webkit-scrollbar{height:0;}
 <div class="toast" id="toast"></div>
 
 <script>
-// ═══════════════════════ SUPABASE ═══════════════════════
-const SUPABASE_URL = 'https://zaczlobfbshsvmahfzjv.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphY3psb2JmYnNoc3ZtYWhmemp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2NDY5MDgsImV4cCI6MjA4NzIyMjkwOH0.4UoDAy4vPw2FPI9UV5uztSlya060HJw57By53SBA-sM';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// ═══════════════════════ GEMINI API ═══════════════════════
+// ⚠️ 여기에 Gemini API 키를 입력하세요 (Google AI Studio에서 발급)
+const GEMINI_API_KEY = "AIzaSyCvSai6F6z--hc56aZ-3D8wh1iu72IjzOM";
 
-// ── AI 호출 헬퍼 (Gemini via Netlify Function)
 async function callAI(prompt, max_tokens = 1000) {
-  const res = await fetch('/api/claude', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, max_tokens })
-  });
-  return await res.json(); // { text: "..." }
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: max_tokens, temperature: 0.7 }
+        })
+      }
+    );
+    const data = await res.json();
+    if (data.error) return { error: data.error.message, text: '' };
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return { text };
+  } catch(e) {
+    return { error: e.message, text: '' };
+  }
 }
+
+// ═══════════════════════ 메모리 DB (Supabase 대체) ═══════════════════════
+// 모든 데이터를 브라우저 메모리에 보관
+const memDB = {
+  products: [],       // [{id, name, category, created_at}]
+  personas: [],       // [{id, product_id, ...페르소나 필드}]
+  review_raw: [],     // [{id, product_id, reviewer_name, rating, review_text, review_date}]
+  review_insights: [] // [{id, product_id, purchase_reasons, install_locations, positive_top5, negative_top5, summary, analyzed_at, review_count}]
+};
+let _autoId = 1;
+const nextId = () => _autoId++;
+
+// Supabase 호환 인터페이스 (기존 코드 최소 수정용)
+const sb = {
+  from: (table) => ({
+    select: (cols) => ({
+      order: (col, opt) => ({ data: [...memDB[table]], error: null }),
+      eq: (col, val) => ({
+        order: (c, o) => ({ data: memDB[table].filter(r => r[col] === val), error: null }),
+        limit: (n) => ({ data: memDB[table].filter(r => r[col] === val).slice(0, n), error: null }),
+        single: () => { const d = memDB[table].find(r => r[col] === val); return { data: d||null, error: d?null:'not found' }; },
+        data: memDB[table].filter(r => r[col] === val), error: null
+      }),
+      limit: (n) => ({ data: memDB[table].slice(0, n), error: null }),
+      data: [...memDB[table]], error: null
+    }),
+    insert: async (rows) => {
+      const arr = Array.isArray(rows) ? rows : [rows];
+      arr.forEach(r => { r.id = r.id || nextId(); memDB[table].push(r); });
+      return { data: arr, error: null };
+    },
+    upsert: async (row, opts) => {
+      const conflictKey = opts?.onConflict;
+      if (conflictKey) {
+        const idx = memDB[table].findIndex(r => r[conflictKey] === row[conflictKey]);
+        if (idx >= 0) { memDB[table][idx] = { ...memDB[table][idx], ...row }; }
+        else { row.id = row.id || nextId(); memDB[table].push(row); }
+      } else {
+        row.id = row.id || nextId(); memDB[table].push(row);
+      }
+      return { data: row, error: null };
+    },
+    delete: () => ({
+      eq: (col, val) => {
+        memDB[table] = memDB[table].filter(r => r[col] !== val);
+        return { data: null, error: null };
+      }
+    }),
+    // select().eq() 체인을 async/await로 쓰는 경우 대응
+    eq: (col, val) => ({
+      select: (c) => ({ data: memDB[table].filter(r => r[col] === val), error: null }),
+      limit: (n) => ({ data: memDB[table].filter(r => r[col] === val).slice(0,n), error: null }),
+    }),
+  }),
+};
 
 // ═══════════════════════ STATE ═══════════════════════
 let allProducts = [];      // [{id, name, category}]
@@ -409,50 +475,46 @@ const PERSONA_COLORS = ['#c8ff00','#ffb06b','#6bc5ff','#b06bff','#ff6b6b','#ff9f
 const PERSONA_EMOJIS = ['🌿','🐾','🏡','👨‍👩‍👧','🐱','💼','👶','👔','🎨','🌸'];
 
 // ═══════════════════════ INIT ═══════════════════════
-window.addEventListener('load', async () => {
-  await loadProducts();
+window.addEventListener('load', () => {
+  loadProducts();
 });
 
-async function loadProducts() {
-  const { data, error } = await sb.from('products').select('*').order('created_at', { ascending: false });
-  if (error) { showToast('제품 목록 로딩 실패: ' + error.message, 'error'); return; }
-
-  allProducts = data || [];
+function loadProducts() {
+  allProducts = [...memDB.products];
   const sel = document.getElementById('product-select');
   sel.innerHTML = allProducts.length === 0
     ? '<option value="">— 등록된 제품 없음 —</option>'
     : allProducts.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
 
-  // 비교 탭 드롭다운도 채우기
   ['cmp-sel-a','cmp-sel-b'].forEach(id => {
     const s = document.getElementById(id);
+    if (!s) return;
     s.innerHTML = '<option value="">— 제품 선택 —</option>' +
       allProducts.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   });
 
   if (allProducts.length > 0) {
     currentProductId = allProducts[0].id;
-    await loadProductData(currentProductId);
+    sel.value = currentProductId;
+    loadProductData(currentProductId);
   } else {
     showEmptyState();
   }
 }
 
-async function loadProductData(productId) {
-  // 개요 탭 로딩 표시
+function loadProductData(productId) {
   document.getElementById('tab-overview').innerHTML = `<div class="page-loading"><div class="dots"><span></span><span></span><span></span></div><div class="loading-text">데이터 로딩 중...</div></div>`;
 
-  const [{ data: personas }, { data: insights }] = await Promise.all([
-    sb.from('personas').select('*').eq('product_id', productId).order('id'),
-    sb.from('review_insights').select('*').eq('product_id', productId).limit(1)
-  ]);
+  // 메모리에서 직접 조회
+  const personas = memDB.personas.filter(p => p.product_id === productId).sort((a,b) => a.id - b.id);
+  const insights = memDB.review_insights.filter(r => r.product_id === productId);
 
-  currentPersonas = (personas || []).map((p, i) => ({
+  currentPersonas = personas.map((p, i) => ({
     ...p,
     color: PERSONA_COLORS[i % PERSONA_COLORS.length],
     emoji: PERSONA_EMOJIS[i % PERSONA_EMOJIS.length]
   }));
-  currentInsight = insights?.[0] || null;
+  currentInsight = insights[0] || null;
 
   // 탭 리셋
   document.getElementById('cards-grid').innerHTML = '';
@@ -466,7 +528,6 @@ async function loadProductData(productId) {
   renderOverview();
   renderReview();
 
-  // 현재 활성 탭이 다른 곳이면 그것도 렌더
   const activeTab = document.querySelector('.tab-panel.active')?.id;
   if (activeTab === 'tab-personas') renderPersonas();
   if (activeTab === 'tab-focus') renderParts();
@@ -488,7 +549,7 @@ function showEmptyState() {
     </div>`;
 }
 
-// ═══════════════════════ CSV 업로드 ═══════════════════════
+// ═══════════════════════ CSV 업로드 (페르소나) ═══════════════════════
 async function handleCSVUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -510,23 +571,21 @@ async function handleCSVUpload(event) {
 
   if (rows.length === 0) { showToast('유효한 데이터가 없습니다.', 'error'); return; }
 
-  // 제품명 추출 (첫 번째 행의 제품명 컬럼 또는 파일명)
   const productName = rows[0]['제품명'] || rows[0]['product_name'] || file.name.replace('.csv','');
   const productCategory = rows[0]['카테고리'] || rows[0]['category'] || '기타';
 
   showToast(`"${productName}" 저장 중...`, 'success');
 
-  // 1. products 테이블에 제품 upsert
-  const { data: prodData, error: prodErr } = await sb
-    .from('products')
-    .upsert({ name: productName, category: productCategory }, { onConflict: 'name' })
-    .select().single();
+  // 메모리에 제품 upsert
+  let prod = memDB.products.find(p => p.name === productName);
+  if (!prod) {
+    prod = { id: nextId(), name: productName, category: productCategory, created_at: new Date().toISOString() };
+    memDB.products.push(prod);
+  }
+  const productId = prod.id;
 
-  if (prodErr) { showToast('제품 저장 실패: ' + prodErr.message, 'error'); return; }
-  const productId = prodData.id;
-
-  // 2. 기존 페르소나 삭제 후 재삽입
-  await sb.from('personas').delete().eq('product_id', productId);
+  // 기존 페르소나 삭제 후 재삽입
+  memDB.personas = memDB.personas.filter(p => p.product_id !== productId);
 
   const personaRows = rows.map(r => {
     // ── D1 생애주기 → children (있음/없음 정규화)
@@ -606,16 +665,16 @@ async function handleCSVUpload(event) {
     };
   });
 
-  const { error: pErr } = await sb.from('personas').insert(personaRows);
-  if (pErr) { showToast('페르소나 저장 실패: ' + pErr.message, 'error'); return; }
+  // 메모리에 페르소나 저장
+  personaRows.forEach(r => { r.id = nextId(); memDB.personas.push(r); });
 
   showToast(`✅ "${productName}" ${rows.length}명 업로드 완료!`, 'success');
 
   // 제품 목록 새로고침 후 해당 제품으로 전환
-  await loadProducts();
+  loadProducts();
   document.getElementById('product-select').value = productId;
   currentProductId = productId;
-  await loadProductData(productId);
+  loadProductData(productId);
 
   event.target.value = '';
 }
@@ -640,8 +699,8 @@ function switchTab(id, btn) {
   document.getElementById('tab-' + id).classList.add('active');
   if (id === 'personas') renderPersonas();
   if (id === 'focus') renderParts();
-  if (id === 'marketing') renderMarketing();
-  if (id === 'product') renderProduct();
+  if (id === 'marketing') { document.getElementById('idea-grid').innerHTML = ''; renderMarketing(); }
+  if (id === 'product')   { document.getElementById('product-grid').innerHTML = ''; renderProduct(); }
   if (id === 'compare') initCompare();
 }
 
@@ -1119,7 +1178,8 @@ async function handleReviewCSV(event) {
   status.textContent = '파일 읽는 중...';
 
   const text = await file.text();
-  const lines = text.trim().split('\n').filter(l => l.trim());
+  const bom = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+  const lines = bom.trim().split('\n').filter(l => l.trim());
   const headers = parseCSVLine(lines[0]).map(h => h.trim());
   const rows = lines.slice(1).map(l => {
     const vals = parseCSVLine(l);
@@ -1131,25 +1191,24 @@ async function handleReviewCSV(event) {
   reviewRawData = rows;
   status.innerHTML = `<span style="color:var(--accent);font-weight:700">${rows.length}개 리뷰 로드됨</span>`;
 
-  // 컬럼 미리보기
   const colBadges = headers.map(h => `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:.7rem;color:var(--muted)">${h}</span>`).join(' ');
   preview.innerHTML = `<div style="font-size:.72rem;color:var(--muted);margin-bottom:6px">감지된 컬럼:</div><div style="display:flex;flex-wrap:wrap;gap:4px">${colBadges}</div>`;
 
-  // Supabase에 저장
+  // 메모리에 저장
   const prod = allProducts.find(p => p.id === currentProductId);
   if (!prod) return;
-  await sb.from('review_raw').delete().eq('product_id', currentProductId);
+  memDB.review_raw = memDB.review_raw.filter(r => r.product_id !== currentProductId);
   const insertRows = rows.map(r => ({
+    id: nextId(),
     product_id:    currentProductId,
     product_name:  prod.name,
-    reviewer_name: r['리뷰어명'] || r['reviewer_name'] || r['프로필_이름'] || '',
+    reviewer_name: r['리뷰어명'] || r['reviewer_name'] || r['프로필_이름'] || r['사용자ID'] || '',
     rating:        parseFloat(r['평점'] || r['rating'] || r['별점'] || 0) || null,
     review_text:   r['리뷰텍스트'] || r['review_text'] || r['전체_리뷰_통합'] || r['리뷰내용'] || '',
     review_date:   r['리뷰날짜'] || r['review_date'] || r['날짜'] || '',
   })).filter(r => r.review_text);
-  const { error } = await sb.from('review_raw').insert(insertRows);
-  if (error) showToast('리뷰 저장 실패: ' + error.message, 'error');
-  else showToast(`✅ ${insertRows.length}개 리뷰 저장 완료`, 'success');
+  memDB.review_raw.push(...insertRows);
+  showToast(`✅ ${insertRows.length}개 리뷰 저장 완료`, 'success');
 }
 
 // 중지 플래그
@@ -1277,8 +1336,10 @@ async function confirmReAnalyze() {
   const err = document.getElementById('reanalyze-err');
   if (pw !== ADMIN_PW) { err.textContent = '❌ 비밀번호가 틀렸습니다.'; return; }
   closeReAnalyzeModal();
-  await sb.from('review_insights').delete().eq('product_id', currentProductId);
+  memDB.review_insights = memDB.review_insights.filter(r => r.product_id !== currentProductId);
   currentInsight = null;
+  document.getElementById('idea-grid').innerHTML = '';
+  document.getElementById('product-grid').innerHTML = '';
   renderReview();
   showToast('기존 분석 삭제 완료. 새로 분석해주세요.', 'success');
 }
@@ -1312,9 +1373,9 @@ async function runReviewAnalysis() {
 
   if (analysisAborted) { addLog('⏹ 분석이 중지되었습니다.'); btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none'; return; }
 
-  // 2) 리뷰 데이터 소스 결정 (review_raw 우선, 없으면 페르소나)
+  // 2) 리뷰 데이터 소스 결정 (메모리에서 조회)
   let reviewSamples = [];
-  const { data: rawRows } = await sb.from('review_raw').select('reviewer_name,rating,review_text').eq('product_id', currentProductId).limit(200);
+  const rawRows = memDB.review_raw.filter(r => r.product_id === currentProductId).slice(0, 200);
 
   if (rawRows && rawRows.length > 0) {
     addLog(`📋 리뷰 전용 CSV 데이터 ${rawRows.length}개 사용`);
@@ -1397,9 +1458,10 @@ ${batches[bi].join('\n---\n')}
 
   if (!result.purchase_reasons.length) { addLog('❌ 분석 결과가 비어있습니다.'); btn.disabled=false; btn.textContent='🔍 AI 분석 시작하기'; if(stopBtn) stopBtn.style.display='none'; return; }
 
-  // 5) DB 저장
-  addLog('💾 분석 결과 DB 저장 중...');
+  // 5) 메모리 저장
+  addLog('💾 분석 결과 저장 중...');
   const saveData = {
+    id: nextId(),
     product_id:       currentProductId,
     product_name:     prodName,
     purchase_reasons: JSON.stringify(result.purchase_reasons),
@@ -1411,19 +1473,26 @@ ${batches[bi].join('\n---\n')}
     review_count:     reviewSamples.length,
     is_cached:        true
   };
-  const { error: upsertErr } = await sb.from('review_insights').upsert(saveData, { onConflict: 'product_id' });
-  if (upsertErr) await sb.from('review_insights').insert(saveData);
+  memDB.review_insights = memDB.review_insights.filter(r => r.product_id !== currentProductId);
+  memDB.review_insights.push(saveData);
 
-  addLog('✅ 저장 완료!');
+  addLog('✅ 저장 완료! 마케팅/상품기획/제품비교 탭에 리뷰 인사이트가 반영됩니다.');
   showToast('✅ 리뷰 인사이트 분석 완료!', 'success');
   currentInsight = saveData;
+
+  // 리뷰 인사이트 의존 탭 캐시 리셋
+  document.getElementById('idea-grid').innerHTML = '';
+  document.getElementById('product-grid').innerHTML = '';
+
   if(stopBtn) stopBtn.style.display='none';
   setTimeout(() => renderReviewData(currentInsight, prod), 500);
 }
 
-async function reAnalyze() {
-  await sb.from('review_insights').delete().eq('product_id', currentProductId);
+function reAnalyze() {
+  memDB.review_insights = memDB.review_insights.filter(r => r.product_id !== currentProductId);
   currentInsight = null;
+  document.getElementById('idea-grid').innerHTML = '';
+  document.getElementById('product-grid').innerHTML = '';
   renderReview();
 }
 // ═══════════════════════ PERSONAS ═══════════════════════
@@ -1650,17 +1719,16 @@ async function runCompare() {
   const out = document.getElementById('cmp-results');
   out.innerHTML = `<div class="page-loading"><div class="dots"><span></span><span></span><span></span></div><div class="loading-text">두 제품 데이터 비교 중...</div></div>`;
 
-  const [{ data: psA }, { data: psB }, { data: insA }, { data: insB }] = await Promise.all([
-    sb.from('personas').select('*').eq('product_id', idA),
-    sb.from('personas').select('*').eq('product_id', idB),
-    sb.from('review_insights').select('*').eq('product_id', idA).limit(1),
-    sb.from('review_insights').select('*').eq('product_id', idB).limit(1),
-  ]);
+  // 메모리에서 직접 조회
+  const psA = memDB.personas.filter(p => p.product_id === idA);
+  const psB = memDB.personas.filter(p => p.product_id === idB);
+  const insA = memDB.review_insights.filter(r => r.product_id === idA);
+  const insB = memDB.review_insights.filter(r => r.product_id === idB);
 
   const prodA = allProducts.find(p=>p.id===idA);
   const prodB = allProducts.find(p=>p.id===idB);
-  const pA = (psA||[]).map((p,i)=>({...p,color:PERSONA_COLORS[i%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[i%PERSONA_EMOJIS.length]}));
-  const pB = (psB||[]).map((p,i)=>({...p,color:PERSONA_COLORS[(i+3)%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[(i+3)%PERSONA_EMOJIS.length]}));
+  const pA = psA.map((p,i)=>({...p,color:PERSONA_COLORS[i%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[i%PERSONA_EMOJIS.length]}));
+  const pB = psB.map((p,i)=>({...p,color:PERSONA_COLORS[(i+3)%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[(i+3)%PERSONA_EMOJIS.length]}));
 
   // D1~D9 요약 데이터 추출 (프롬프트용)
   const summarize = (ps, name) => {
@@ -1684,7 +1752,7 @@ ${summarize(pB, 'B:'+prodB?.name)}
     ai = JSON.parse((data.text||'{}').replace(/```json|```/g,'').trim());
   } catch(e) { ai = null; }
 
-  renderCompareResult(prodA, prodB, pA, pB, insA?.[0], insB?.[0], ai);
+  renderCompareResult(prodA, prodB, pA, pB, insA[0]||null, insB[0]||null, ai);
   btn.disabled = false; btn.textContent = '⚖️ 비교 분석 시작';
 }
 
@@ -1997,10 +2065,11 @@ async function runCmpFocus(idA, idB) {
   const btn = document.getElementById('cmp-focus-run');
   btn.disabled = true; btn.textContent = '응답 생성 중...';
 
-  const { data: psA } = await sb.from('personas').select('*').eq('product_id', idA);
-  const { data: psB } = await sb.from('personas').select('*').eq('product_id', idB);
-  const pA = (psA||[]).map((p,i)=>({...p,color:PERSONA_COLORS[i%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[i%PERSONA_EMOJIS.length],_prod:'a'}));
-  const pB = (psB||[]).map((p,i)=>({...p,color:PERSONA_COLORS[(i+3)%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[(i+3)%PERSONA_EMOJIS.length],_prod:'b'}));
+  // 메모리에서 직접 조회
+  const psA = memDB.personas.filter(p => p.product_id === idA);
+  const psB = memDB.personas.filter(p => p.product_id === idB);
+  const pA = psA.map((p,i)=>({...p,color:PERSONA_COLORS[i%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[i%PERSONA_EMOJIS.length],_prod:'a'}));
+  const pB = psB.map((p,i)=>({...p,color:PERSONA_COLORS[(i+3)%PERSONA_COLORS.length],emoji:PERSONA_EMOJIS[(i+3)%PERSONA_EMOJIS.length],_prod:'b'}));
 
   const colA = document.getElementById('cmp-resp-a');
   const colB = document.getElementById('cmp-resp-b');
@@ -2031,6 +2100,7 @@ async function runCmpFocus(idA, idB) {
 }
 
 // ═══════════════════════ MARKETING ═══════════════════════
+// ═══════════════════════ MARKETING ═══════════════════════
 function renderMarketing() {
   const grid = document.getElementById('idea-grid');
   if (grid.children.length > 0) return;
@@ -2043,25 +2113,61 @@ function renderMarketing() {
   const aesthetics = [...new Set(ps.map(p=>p.aesthetic).filter(Boolean))].slice(0,2).join('·');
   const topChannel = ps.map(p=>p.info_channel||'').join(' ').includes('유튜브') ? '유튜브' : '온라인 커뮤니티';
 
+  // ── 리뷰 인사이트 데이터 파싱
+  let posKws=[], negKws=[], purchaseReasons=[], installLocs=[], reviewSummary='';
+  if (currentInsight) {
+    try { posKws = JSON.parse(currentInsight.positive_top5||'[]'); } catch(e){}
+    try { negKws = JSON.parse(currentInsight.negative_top5||'[]'); } catch(e){}
+    try { purchaseReasons = JSON.parse(currentInsight.purchase_reasons||'[]'); } catch(e){}
+    try { installLocs = JSON.parse(currentInsight.install_locations||'[]'); } catch(e){}
+    reviewSummary = currentInsight.summary || '';
+  }
+  const hasReview = currentInsight && posKws.length > 0;
+  const topPos = posKws[0]?.keyword || '';
+  const topNeg = negKws[0]?.keyword || '';
+  const topReason = purchaseReasons[0]?.reason || '';
+  const topReasonDetail = purchaseReasons[0]?.detail || '';
+  const topReasonQuote = purchaseReasons[0]?.quote || '';
+  const topInstall = installLocs[0]?.location || '';
+
+  // 리뷰 상태 배너
+  const reviewBanner = hasReview
+    ? `<div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.2);border-radius:10px;padding:12px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:1rem">🔗</span>
+        <div>
+          <span style="font-size:.72rem;color:var(--accent);font-weight:700">리뷰 인사이트 연동됨</span>
+          <span style="font-size:.7rem;color:var(--muted);margin-left:8px">${currentInsight.review_count||0}개 리뷰 분석 반영 · 리뷰 인사이트 탭에서 업데이트 가능</span>
+        </div>
+      </div>`
+    : `<div style="background:rgba(107,197,255,.04);border:1px solid rgba(107,197,255,.15);border-radius:10px;padding:10px 18px;margin-bottom:20px;font-size:.75rem;color:var(--muted)">
+        💡 <strong style="color:var(--accent3)">리뷰 인사이트 탭</strong>에서 CSV 업로드 후 AI 분석을 완료하면 더 정확한 마케팅 전략이 생성됩니다.
+      </div>`;
+
   const ideas = [
     {cat:'광고 채널 전략', col:'#c8ff00',
      title:`${topChannel} 중심 퍼포먼스 마케팅`,
-     desc:`페르소나 대다수가 ${topChannel}를 주 정보채널로 활용. 실사용 언박싱 + 효과 비교 형식의 리뷰 콘텐츠가 구매 결정에 직접 영향.`},
+     desc:`페르소나 대다수가 ${topChannel}를 주 정보채널로 활용.${hasReview && topPos ? ` 실제 구매자 긍정 키워드 1위 "${topPos}"를 중심으로` : ''} 실사용 언박싱 + 효과 비교 형식의 리뷰 콘텐츠가 구매 결정에 직접 영향.`},
+    ...(hasReview && topReason ? [{cat:'구매 동인 메시지', col:'#ff6b6b',
+     title:`"${topReason}" 소구 카피 최우선`,
+     desc:`실제 구매자 리뷰 분석 결과, 구매 이유 1위는 "${topReason}". ${topReasonDetail} ${topReasonQuote ? `실제 구매자 인용: "${topReasonQuote}"` : ''}`}] : []),
     {cat:'메시지 전략', col:'#ff6b6b',
      title:'Pain Point 직접 해결 카피',
-     desc:`페르소나 공통 Pain Points를 직접 해결하는 메시지 설계. "이 문제, 해결됩니까?" 형식의 솔직한 소구가 고관여 소비자에게 효과적.`},
+     desc:`페르소나 공통 Pain Points를 직접 해결하는 메시지 설계.${hasReview && topNeg ? ` 실제 리뷰 부정 키워드 1위 "${topNeg}"에 대한 반박 메시지를 선제적으로 준비.` : ''} "이 문제, 해결됩니까?" 형식의 솔직한 소구가 고관여 소비자에게 효과적.`},
     {cat:'타겟 세분화', col:'#b06bff',
      title:'페르소나별 크리에이티브 분리',
-     desc:`페르소나 유형(${ps.map(p=>p.profile_name||'?').slice(0,3).join('·')})은 Pain Point가 달라 동일 메시지 불가. 타겟별 광고 소재 별도 제작 필요.`},
+     desc:`페르소나 유형(${ps.map(p=>p.profile_name||'?').slice(0,3).join('·')})은 Pain Point가 달라 동일 메시지 불가.${hasReview && topInstall ? ` 주 설치 장소 "${topInstall}" 타깃별 맞춤 소재 별도 제작 필요.` : ' 타겟별 광고 소재 별도 제작 필요.'}`},
     ...(petPct >= 30 ? [{cat:'번들·크로스셀', col:'#6bc5ff',
      title:`반려동물 케어 번들 구성`,
      desc:`${petPct}%가 반려동물 보유. 본제품 + 펫 케어 액세서리 번들 패키지 시 크로스셀 및 객단가 상승 기회.`}] : []),
     ...(childPct >= 30 ? [{cat:'채널 전략', col:'#ffb06b',
      title:'맘카페 + 육아 유튜브 채널',
      desc:`${childPct}%가 자녀 있음. 맘카페 협찬 리뷰 + 육아 유튜브 PPL 집행 시 구매 전환율 높음.`}] : []),
+    ...(hasReview && negKws.length >= 2 ? [{cat:'리스크 관리', col:'#f97316',
+     title:`부정 키워드 선제 대응 전략`,
+     desc:`리뷰 분석 부정 키워드: ${negKws.slice(0,3).map(k=>k.keyword).join(', ')}. 이 키워드들을 상품 상세 페이지와 광고 소재에서 선제적으로 해소하는 Q&A·비교표 콘텐츠 필요.`}] : []),
     {cat:'리뷰 마케팅', col:'#ffb06b',
      title:'씨드 리뷰어 UGC 전략',
-     desc:`페르소나 평균 리뷰 작성 수 높음. 구매 후 리뷰 요청 자동화 + 포토리뷰 인센티브 설계 시 UGC 확보 용이.`},
+     desc:`페르소나 평균 리뷰 작성 수 높음.${hasReview ? ` 현재 리뷰 긍정 키워드(${posKws.slice(0,2).map(k=>k.keyword).join('·')})를 UGC 가이드라인에 반영.` : ''} 구매 후 리뷰 요청 자동화 + 포토리뷰 인센티브 설계 시 UGC 확보 용이.`},
     {cat:'채널 전략', col:'#c8ff00',
      title:'쿠팡 내 광고 최우선 집행',
      desc:`페르소나 대다수 쿠팡 앱 상위 사용. PPC보다 쿠팡 내 상품 노출·로켓배송 최적화가 전환에 직접 영향.`},
@@ -2073,6 +2179,8 @@ function renderMarketing() {
      desc:`가성비·효율성 중시 성향. 구매 후 소모품 정기배송 구독 연결 시 LTV 증가 기회.`}
   ];
 
+  // 배너 삽입
+  grid.innerHTML = reviewBanner;
   ideas.forEach((idea, i) => {
     idea.n = String(i+1).padStart(2,'0');
     const card = document.createElement('div'); card.className = 'idea-card';
@@ -2095,13 +2203,47 @@ function renderProduct() {
   const unmetList = [...new Set(ps.flatMap(p=>(p.unmet_needs||'').split(/[,·]+/).map(u=>u.trim())).filter(u=>u.length>2))].slice(0,3);
   const aesthetics = [...new Set(ps.map(p=>p.aesthetic).filter(Boolean))].slice(0,2).join('·');
 
+  // ── 리뷰 인사이트 데이터 파싱
+  let posKws=[], negKws=[], purchaseReasons=[], installLocs=[], reviewSummary='';
+  if (currentInsight) {
+    try { posKws = JSON.parse(currentInsight.positive_top5||'[]'); } catch(e){}
+    try { negKws = JSON.parse(currentInsight.negative_top5||'[]'); } catch(e){}
+    try { purchaseReasons = JSON.parse(currentInsight.purchase_reasons||'[]'); } catch(e){}
+    try { installLocs = JSON.parse(currentInsight.install_locations||'[]'); } catch(e){}
+    reviewSummary = currentInsight.summary || '';
+  }
+  const hasReview = currentInsight && posKws.length > 0;
+  const topNeg = negKws[0]?.keyword || '';
+  const topNegDesc = negKws[0]?.desc || '';
+  const topPos = posKws[0]?.keyword || '';
+  const topInstall = installLocs[0]?.location || '';
+  const topInstallDetail = installLocs[0]?.detail || '';
+
+  const reviewBanner = hasReview
+    ? `<div style="background:rgba(200,255,0,.06);border:1px solid rgba(200,255,0,.2);border-radius:10px;padding:12px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:1rem">🔗</span>
+        <div>
+          <span style="font-size:.72rem;color:var(--accent);font-weight:700">리뷰 인사이트 연동됨</span>
+          <span style="font-size:.7rem;color:var(--muted);margin-left:8px">${currentInsight.review_count||0}개 리뷰 분석 반영</span>
+        </div>
+      </div>`
+    : `<div style="background:rgba(107,197,255,.04);border:1px solid rgba(107,197,255,.15);border-radius:10px;padding:10px 18px;margin-bottom:20px;font-size:.75rem;color:var(--muted)">
+        💡 <strong style="color:var(--accent3)">리뷰 인사이트 탭</strong>에서 분석을 완료하면 실제 고객 목소리 기반의 기획 인사이트가 추가됩니다.
+      </div>`;
+
   const ideas = [
     {cat:'기능 기획', col:'#c8ff00',
      title:'Unmet Needs 기반 핵심 기능 도출',
-     desc:`페르소나 미충족 니즈: ${unmetList.length ? unmetList.join(', ') : '데이터 수집 중'}. 이 니즈를 직접 해결하는 기능을 최우선 로드맵에 반영해야 함.`},
+     desc:`페르소나 미충족 니즈: ${unmetList.length ? unmetList.join(', ') : '데이터 수집 중'}.${hasReview && topNeg ? ` 실제 리뷰 부정 키워드 1위 "${topNeg}"(${topNegDesc}) — 이 점을 직접 해결하는 기능을 최우선 로드맵에 반영해야 함.` : ' 이 니즈를 직접 해결하는 기능을 최우선 로드맵에 반영해야 함.'}`},
+    ...(hasReview && negKws.length >= 2 ? [{cat:'개선 우선순위', col:'#f97316',
+     title:`실제 고객 불만 TOP${Math.min(negKws.length,3)} 해결 로드맵`,
+     desc:`리뷰 분석 부정 키워드: ${negKws.slice(0,3).map((k,i)=>`${i+1}위 "${k.keyword}"(${k.mention_count||0}건)`).join(', ')}. 언급 빈도 순으로 제품 개선 우선순위를 설정하고 다음 버전 스펙에 반영 권고.`}] : []),
     {cat:'UX/UI 기획', col:'#ff6b6b',
      title:'IT 숙련도 기반 인터페이스 설계',
-     desc:`페르소나 IT 수준이 중상~높음. 복잡한 설정 없이 직관적으로 쓸 수 있는 UX + 앱 연동 기능이 만족도에 직접 영향.`},
+     desc:`페르소나 IT 수준이 중상~높음.${hasReview && topPos ? ` 실제 리뷰 긍정 1위 "${topPos}" — 이 경험을 UX 핵심 가치로 유지하며` : ''} 복잡한 설정 없이 직관적으로 쓸 수 있는 UX + 앱 연동 기능이 만족도에 직접 영향.`},
+    ...(hasReview && installLocs.length > 0 ? [{cat:'설치·환경 최적화', col:'#6bc5ff',
+     title:`주 설치 환경(${topInstall}) 특화 설계`,
+     desc:`리뷰 분석 결과 주 설치 장소 ${installLocs.map(l=>`${l.location}(${l.pct}%)`).join(', ')}. ${topInstall} 환경에 최적화된 크기·소음·배기 설계 필요. ${topInstallDetail}`}] : []),
     ...(petPct >= 30 ? [{cat:'특화 기능', col:'#6bc5ff',
      title:`반려동물 특화 기능 추가 (${petPct}% 니즈)`,
      desc:`${petPct}%가 반려동물 보유. 펫 전용 코스(저온·탈취·털 필터 강화 등) 탑재 시 명확한 구매 이유 생성 및 차별화 포인트 확보.`}] : []),
@@ -2116,15 +2258,16 @@ function renderProduct() {
      desc:`페르소나 인테리어 민감도 높음. 제품 색상·소재·형태(CMF)를 공간 인테리어와 어울리는 방향으로 설계 시 구매 결정 요인 추가.`},
     {cat:'패키징·설치', col:'#c8ff00',
      title:'방문설치·초기 경험 설계',
-     desc:`설치 편의성이 구매 이유로 언급됨. 방문설치 포함 옵션 유지 + 설치 후 첫 사용 가이드 동봉 시 초기 만족도 향상.`},
+     desc:`설치 편의성이 구매 이유로 언급됨.${hasReview ? ` 리뷰 긍정 키워드에서도 설치 경험이 상위 언급.` : ''} 방문설치 포함 옵션 유지 + 설치 후 첫 사용 가이드 동봉 시 초기 만족도 향상.`},
     {cat:'가격 전략', col:'#6bc5ff',
      title:'가성비 포지셔닝 또는 프리미엄 분리',
-     desc:`페르소나 소득 중산층 집중. 가성비 라인과 프리미엄 라인을 명확히 분리해 각각 다른 구매 동인에 소구하는 라인업 전략 필요.`},
+     desc:`페르소나 소득 중산층 집중.${hasReview && negKws.some(k=>k.keyword.includes('가격')||k.keyword.includes('비싸')) ? ' 실제 리뷰에서 가격 부담이 부정 키워드로 언급됨 — 가성비 라인 포지셔닝 강화 또는 할부 혜택 전면 배치 고려.' : ' 가성비 라인과 프리미엄 라인을 명확히 분리해 각각 다른 구매 동인에 소구하는 라인업 전략 필요.'}`},
     {cat:'A/S·신뢰', col:'#b06bff',
      title:'방문 A/S 보장을 핵심 스펙으로',
      desc:`A/S 접근성이 구매 결정에 직접 영향. 방문 A/S 보장·무상 기간 연장·빠른 응대를 스펙 페이지 상단에 배치해야 함.`}
   ];
 
+  grid.innerHTML = reviewBanner;
   ideas.forEach((idea, i) => {
     idea.n = String(i+1).padStart(2,'0');
     const card = document.createElement('div'); card.className = 'idea-card';
